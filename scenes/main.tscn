@@ -1,9 +1,9 @@
 [gd_scene load_steps=5 format=3 uid="uid://bjrbl41u8x1ts"]
 
 [ext_resource type="Script" uid="uid://c4b7o8w604p0f" path="res://scripts/main.gd" id="1_o5qli"]
-[ext_resource type="Script" path="res://scripts/stage_generator.gd" id="2_stage"]
+[ext_resource type="Script" uid="uid://cxx8dobki81ci" path="res://scripts/stage_generator.gd" id="2_stage"]
 [ext_resource type="PackedScene" path="res://scenes/player_cube.tscn" id="3_cube"]
-[ext_resource type="Script" path="res://scripts/rope.gd" id="4_rope"]
+[ext_resource type="Script" uid="uid://blvphy0n63d0o" path="res://scripts/rope.gd" id="4_rope"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1_o5qli")
@@ -22,16 +22,11 @@ color = Color(0.07, 0.05, 0.09, 1)
 
 [node name="StageGenerator" type="Node2D" parent="."]
 script = ExtResource("2_stage")
-generation_seed = 1
-rope_length = 220.0
-band_count = 5
-show_graph = true
 
 [node name="Players" type="Node2D" parent="."]
 
 [node name="Player1" parent="Players" instance=ExtResource("3_cube")]
 position = Vector2(-18, 0)
-player_index = 0
 
 [node name="Player2" parent="Players" instance=ExtResource("3_cube")]
 modulate = Color(0.55, 0.85, 1, 1)
@@ -40,7 +35,6 @@ player_index = 1
 
 [node name="Rope" type="Node2D" parent="."]
 script = ExtResource("4_rope")
-max_length = 220.0
 player_a_path = NodePath("../Players/Player1")
 player_b_path = NodePath("../Players/Player2")
 
@@ -52,9 +46,9 @@ begin_cap_mode = 2
 end_cap_mode = 2
 
 [node name="Camera2D" type="Camera2D" parent="."]
+zoom = Vector2(0.85, 0.85)
 position_smoothing_enabled = true
 position_smoothing_speed = 4.0
-zoom = Vector2(0.85, 0.85)
 
 [node name="CanvasLayer" type="CanvasLayer" parent="."]
 

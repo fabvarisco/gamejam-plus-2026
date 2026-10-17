@@ -2,7 +2,7 @@
 class_name Lift
 extends AnimatableBody2D
 
-## Room 4's weighted platform. It stays down while a cube stands on it; once it has
+## The camp's weighted platform. It stays down while a cube stands on it; once it has
 ## been used and both cubes leave it, it rises out of reach and stays up until the room
 ## resets. Moved by the simulating peer inside the physics step.
 

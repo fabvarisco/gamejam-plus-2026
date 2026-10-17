@@ -51,6 +51,7 @@ var facing_left: bool = false
 
 var _jump_prev: bool = false
 var _jumping: bool = false
+var _grounded_last: bool = false
 var _coyote: float = 0.0
 var _jump_buffer: float = 0.0
 var _land_timer: float = 0.0
@@ -88,6 +89,11 @@ func step(delta: float) -> void:
 		global_position += velocity * delta
 		return
 
+	if _grounded_last and not was_on_floor and not _jumping:
+		# Walking off a ledge carries no more speed than a jump does, so a 2-cube gap
+		# can't be crossed by running off the edge either.
+		velocity.x = clampf(velocity.x, -Tuning.AIR_SPEED, Tuning.AIR_SPEED)
+	_grounded_last = was_on_floor
 	_coyote = Tuning.COYOTE_TIME if was_on_floor else maxf(0.0, _coyote - delta)
 	var jump := input_jump and not input_locked
 	if jump and not _jump_prev:
@@ -223,6 +229,7 @@ func teleport(pos: Vector2) -> void:
 	rope_force = Vector2.ZERO
 	climbing = false
 	_jumping = false
+	_grounded_last = false
 	_net_target = pos
 	_net_has_target = false
 

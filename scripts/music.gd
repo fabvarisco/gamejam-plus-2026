@@ -2,7 +2,7 @@ class_name Music
 extends AudioStreamPlayer
 
 ## Synthesized adventure loop (no audio assets yet). Below the wall it plays clean; the
-## room 4 line ducks it; from the seam up it stutters, detunes, crushes and mixes with
+## camp line ducks it; from the seam up it stutters, detunes, crushes and mixes with
 ## noise; at the final fall it cuts.
 
 enum State { PLAY, DUCK, CORRUPT, CUT }

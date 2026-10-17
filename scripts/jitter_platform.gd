@@ -55,4 +55,4 @@ func _draw() -> void:
 		return
 	draw_set_transform(_jit)
 	var blocks: Array[Rect2] = [rect]
-	TerrainArt.paint(self, blocks, true)
+	TerrainArt.paint(self, blocks, Themes.Style.GRID)

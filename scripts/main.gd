@@ -8,9 +8,10 @@ const C := Tuning.CUBE
 const LINE := "Nossa, ainda bem que não é a gente."
 const WITNESS_DURATION := 7.0
 const ENDING_IDLE_LIMIT := 10.0
-const ROOM_FOR_SEAM := 5
-const ROOM_WITNESS := 3
-const ROOM_EDGE := 7
+const ROOM_FOR_SEAM := StageGenerator.ROOM_SEAM
+const ROOM_WITNESS := StageGenerator.ROOM_WITNESS
+const ROOM_EDGE := StageGenerator.ROOM_EDGE
+const SKY_BLEND := 1.5
 const P1_COLOR := Color(1.0, 0.56, 0.28)
 const P2_COLOR := Color(0.3, 0.82, 0.86)
 
@@ -52,6 +53,9 @@ var _corruption_visual: float = 0.0
 var _speech: Label
 var _room_shown: int = -1
 var _room_label_t: float = 0.0
+var _sky_top := Themes.SKIES[0][0] as Color
+var _sky_bottom := Themes.SKIES[0][1] as Color
+var _sky_stars: float = 0.0
 
 
 func _ready() -> void:
@@ -105,8 +109,9 @@ func _physics_process(delta: float) -> void:
 		cube.input_locked = locked
 	if stage.lift != null:
 		stage.lift.update(delta, cubes)
-	for j in stage.jitters:
-		j.apply_time(sim_time)
+	for c in stage.cornices:
+		c.update(cubes)
+	stage.apply_time(sim_time)
 	if _try_seam(cubes, locked):
 		return
 	player_1.step(delta)
@@ -165,7 +170,7 @@ func _progress(delta: float) -> void:
 	if in_pit == 2:
 		_emit("reset")
 		return
-	# Room 4: once the lift has risen there is no way back up from its floor.
+	# The camp: once the lift has risen there is no way back up from its floor.
 	if checkpoint == ROOM_WITNESS and stage.lift != null and stage.lift.offset > C \
 			and stage.lift_stuck_zone.has_point(player_1.global_position) \
 			and stage.lift_stuck_zone.has_point(player_2.global_position):
@@ -185,15 +190,14 @@ func _progress(delta: float) -> void:
 
 	if checkpoint == ROOM_EDGE:
 		_edge_idle += delta
-		var near_border := player_1.global_position.x < stage.border_left_x + 3.0 * C \
-				or player_2.global_position.x < stage.border_left_x + 3.0 * C
+		var near_border := stage.near_border(player_1.global_position) or stage.near_border(player_2.global_position)
 		if near_border or _edge_idle > ENDING_IDLE_LIMIT:
 			_emit("ending", [Ending.MOON])
 
 
-## Room 5: jumping from the glitching bump under the broken corner is the glitch. The
-## seam pulls both cubes past the wall onto room 6's floor; the crossing then counts as
-## soon as both stand there.
+## The summit: jumping from the glitching bump under the broken corner is the glitch. The
+## seam pulls both cubes past the wall onto the seam room's floor; the crossing then
+## counts as soon as both stand there.
 func _try_seam(cubes: Array, locked: bool) -> bool:
 	if locked or corrupted or checkpoint != ROOM_FOR_SEAM - 1:
 		return false
@@ -222,7 +226,7 @@ func _step_ending(delta: float) -> void:
 			if _ending_t > 2.4:
 				_emit("ending", [Ending.FALL])
 		Ending.FALL:
-			# Both fall down the mountain they climbed, past the ledge from room 4.
+			# Both fall down the mountain they climbed, past the camp ledge where they watched.
 			var targets := [stage.echo_x - C * 0.6, stage.echo_x + C * 0.6]
 			var cubes := [player_1, player_2]
 			for i in 2:
@@ -281,6 +285,8 @@ func _place_at_checkpoint() -> void:
 	rope.reset(room.spawns[0], room.spawns[1])
 	if checkpoint == ROOM_WITNESS and stage.lift != null:
 		stage.lift.reset()
+	for c in stage.cornices:
+		c.set_intact(true)
 
 
 func _cross_seam() -> void:
@@ -345,7 +351,7 @@ func _set_ending(phase: int) -> void:
 
 
 func _place_witnesses() -> void:
-	# Two small cubes on the room 4 ledge, watching. They say they are glad it is not them.
+	# Two small cubes on the camp's ledge, watching. They say they are glad it is not them.
 	for i in stage.witness_spots.size():
 		var s := Sprite2D.new()
 		s.texture = PlayerCube.TEX_IDLE
@@ -380,10 +386,26 @@ func _process(delta: float) -> void:
 		_speech.position = mid + Vector2(-_speech.size.x * 0.5, -C * 2.6)
 
 	_corruption_visual = move_toward(_corruption_visual, 1.0 if corrupted else 0.0, delta * 0.6)
-	(sky.material as ShaderMaterial).set_shader_parameter("corruption", _corruption_visual)
-	(sky.material as ShaderMaterial).set_shader_parameter("height", clampf(-camera.global_position.y / (Tuning.ROOM_PITCH * C * 7.0), 0.0, 1.0))
+	_update_sky(delta)
 	_update_glitch(delta)
 	_update_room_label(delta)
+
+
+## Each room has its own sky; the camera's room blends in as the climb moves up.
+func _update_sky(delta: float) -> void:
+	var idx := stage.room_index_at(camera.global_position.y + Tuning.ROOM_H * 0.5 * C)
+	if not corrupted:
+		idx = mini(idx, ROOM_FOR_SEAM - 1)
+	var theme: Array = Themes.SKIES[idx]
+	var k := 1.0 - exp(-delta * SKY_BLEND)
+	_sky_top = _sky_top.lerp(theme[0], k)
+	_sky_bottom = _sky_bottom.lerp(theme[1], k)
+	_sky_stars = lerpf(_sky_stars, theme[2], k)
+	var mat := sky.material as ShaderMaterial
+	mat.set_shader_parameter("corruption", _corruption_visual)
+	mat.set_shader_parameter("top_color", _sky_top)
+	mat.set_shader_parameter("bottom_color", _sky_bottom)
+	mat.set_shader_parameter("stars", _sky_stars)
 
 
 func _midpoint() -> Vector2:
@@ -409,7 +431,7 @@ func _update_room_label(delta: float) -> void:
 	if checkpoint != _room_shown:
 		_room_shown = checkpoint
 		_room_label_t = 3.0
-		var room_name := StageGenerator.ROOM_NAMES[checkpoint]
+		var room_name := Themes.NAMES[checkpoint]
 		room_label.text = "%d · %s" % [checkpoint + 1, room_name]
 		if corrupted:
 			room_label.text = room_label.text.substr(0, randi_range(3, room_label.text.length()))
@@ -444,6 +466,7 @@ func _snapshot() -> Array:
 		player_1.global_position, player_1.velocity, player_1.net_flags(),
 		player_2.global_position, player_2.velocity, player_2.net_flags(),
 		stage.lift.offset if stage.lift != null else 0.0,
+		stage.cornice_bits(),
 	]
 
 
@@ -482,8 +505,8 @@ func _rpc_snapshot(data: Array) -> void:
 	player_2.apply_snapshot(data[4], data[5], data[6])
 	if stage.lift != null:
 		stage.lift.apply_offset(data[7])
-	for j in stage.jitters:
-		j.apply_time(sim_time)
+	stage.apply_cornice_bits(data[8])
+	stage.apply_time(sim_time)
 	player_1.ending_fall = _ending >= Ending.FALL
 	player_2.ending_fall = _ending >= Ending.FALL
 

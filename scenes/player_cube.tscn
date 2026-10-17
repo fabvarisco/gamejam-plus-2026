@@ -1,4 +1,4 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://scripts/player_cube.gd" id="1_player"]
 [ext_resource type="Texture2D" path="res://Assets/cubo_parado_dir.svg" id="2_sprite"]
@@ -6,16 +6,72 @@
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_cube"]
 size = Vector2(32, 32)
 
+[sub_resource type="Gradient" id="Gradient_dust"]
+offsets = PackedFloat32Array(0, 1)
+colors = PackedColorArray(1, 1, 1, 1, 1, 1, 1, 1)
+
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_dust"]
+gradient = SubResource("Gradient_dust")
+width = 4
+height = 4
+fill = 2
+fill_from = Vector2(0.5, 0.5)
+fill_to = Vector2(1, 0.5)
+
 [node name="PlayerCube" type="CharacterBody2D"]
 collision_layer = 2
 collision_mask = 1
 floor_stop_on_slope = true
 script = ExtResource("1_player")
 
-[node name="Sprite2D" type="Sprite2D" parent="."]
-position = Vector2(0, -4)
+[node name="Visual" type="Node2D" parent="."]
+position = Vector2(0, 16)
+
+[node name="Sprite2D" type="Sprite2D" parent="Visual"]
+position = Vector2(0, -20)
 scale = Vector2(0.2, 0.2)
 texture = ExtResource("2_sprite")
+
+[node name="WalkDust" type="CPUParticles2D" parent="Visual"]
+position = Vector2(0, -20)
+emitting = false
+amount = 3
+lifetime = 0.38
+randomness = 0.5
+lifetime_randomness = 0.25
+local_coords = false
+emission_shape = 3
+emission_rect_extents = Vector2(16, 16)
+direction = Vector2(-1, 0)
+spread = 50.0
+gravity = Vector2(0, 40)
+initial_velocity_min = 12.0
+initial_velocity_max = 32.0
+scale_amount_min = 1.0
+scale_amount_max = 1.6
+color = Color(1, 1, 1, 0.9)
+texture = SubResource("GradientTexture2D_dust")
+
+[node name="LandDust" type="CPUParticles2D" parent="Visual"]
+position = Vector2(0, -20)
+emitting = false
+amount = 3
+lifetime = 0.32
+one_shot = true
+explosiveness = 0.92
+randomness = 0.45
+local_coords = false
+emission_shape = 3
+emission_rect_extents = Vector2(16, 16)
+direction = Vector2(0, -1)
+spread = 180.0
+gravity = Vector2(0, 80)
+initial_velocity_min = 20.0
+initial_velocity_max = 55.0
+scale_amount_min = 1.0
+scale_amount_max = 1.6
+color = Color(1, 1, 1, 1)
+texture = SubResource("GradientTexture2D_dust")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
 shape = SubResource("RectangleShape2D_cube")

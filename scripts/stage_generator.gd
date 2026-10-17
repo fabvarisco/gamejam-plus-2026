@@ -38,6 +38,9 @@ var rooms: Array[Room] = []
 var witness_trigger := Rect2()
 ## Room 4, below the near ledge: once the lift has risen, both cubes down here are stuck.
 var lift_stuck_zone := Rect2()
+## Room 5's seam: a cube standing on the glitching bump that jumps is pulled through the
+## broken corner, and pulls its partner with it.
+var seam_trigger := Rect2()
 var witness_spots: Array[Vector2] = []
 var echo_x: float = 0.0
 var border_left_x: float = 0.0
@@ -245,23 +248,21 @@ func _build_wall(room: Room) -> void:
 	_solid(room, 33, 6, 2, 1)
 	room.spawns = _entry_spawns(room)
 
-	# The wall: room 6's floor, drawn as this room's ceiling. Collision forgot [16, 19).
-	_solid(room, 0, 10, 16, 1)
-	_solid(room, 19, 10, 3, 1)
+	# The wall: room 6's floor, drawn as this room's ceiling. Its corner over the summit
+	# is broken: the collision forgot [21, 24), and under it a glitching rock bump on the
+	# summit is the hold that clips through the wall. Jumping from it is the glitch.
+	_solid(room, 0, 10, 21, 1)
 	var seam := GlitchArt.new()
 	seam.name = "Seam"
-	seam.rects = [_rect(room, 16, 10, 3, 1)]
+	seam.rects = [_rect(room, 21, 10, 3, 1)]
 	_root.add_child(seam)
-	# A broken corner and holds that draw in the wrong place, clipping into the wall.
-	_solid(room, 19, 5, 1, 2)
+	var bump := _solid(room, 22, 6, 1, 1)
 	var holds := GlitchArt.new()
 	holds.name = "SeamHolds"
-	holds.draw_offset = Vector2(9.0, -6.0)
-	for h in [[18, 7], [17, 8], [16, 9]]:
-		var r := _rect(room, h[0], h[1], 1, 1)
-		_add_collision(r)
-		holds.rects.append(r)
+	holds.draw_offset = Vector2(3.0, -2.0)
+	holds.rects = [bump, _rect(room, 22, 7.6, 1, 0.8), _rect(room, 21.5, 8.7, 1, 0.8)]
 	_root.add_child(holds)
+	seam_trigger = _rect(room, 21.6, 7.0, 1.8, 1.0)
 	_hills(room, Color(0.6, 0.4, 0.4, 0.35))
 
 

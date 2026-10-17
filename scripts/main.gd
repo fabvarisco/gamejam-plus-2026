@@ -107,6 +107,8 @@ func _physics_process(delta: float) -> void:
 		stage.lift.update(delta, cubes)
 	for j in stage.jitters:
 		j.apply_time(sim_time)
+	if _try_seam(cubes, locked):
+		return
 	player_1.step(delta)
 	player_2.step(delta)
 	rope.step(delta, player_1, player_2, true)
@@ -187,6 +189,23 @@ func _progress(delta: float) -> void:
 				or player_2.global_position.x < stage.border_left_x + 3.0 * C
 		if near_border or _edge_idle > ENDING_IDLE_LIMIT:
 			_emit("ending", [Ending.MOON])
+
+
+## Room 5: jumping from the glitching bump under the broken corner is the glitch. The
+## seam pulls both cubes past the wall onto room 6's floor; the crossing then counts as
+## soon as both stand there.
+func _try_seam(cubes: Array, locked: bool) -> bool:
+	if locked or corrupted or checkpoint != ROOM_FOR_SEAM - 1:
+		return false
+	for cube in cubes:
+		if cube.input_jump and cube.is_on_floor() and stage.seam_trigger.has_point(cube.global_position):
+			var spawns: Array[Vector2] = stage.rooms[ROOM_FOR_SEAM].spawns
+			player_1.teleport(spawns[0])
+			player_2.teleport(spawns[1])
+			rope.reset(spawns[0], spawns[1])
+			_glitch_burst = 0.6
+			return true
+	return false
 
 
 func _both_standing_above(floor_line: float) -> bool:

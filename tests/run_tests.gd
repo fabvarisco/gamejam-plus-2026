@@ -34,7 +34,7 @@ func _initialize() -> void:
 	var tests := [
 		"test_settle", "test_hang_holds", "test_solo_step", "test_solo_lip_fails", "test_stack_climbs_lip",
 		"test_haul_up_lip", "test_climb_recovery", "test_solo_gap_fails", "test_swing_crosses_gap",
-		"test_lift", "test_witness", "test_wall_unreachable", "test_seam_crossing", "test_exits",
+		"test_lift", "test_witness", "test_wall_unreachable", "test_seam_crossing", "test_room_paths", "test_exits",
 		"test_ending", "test_seeds_spawn_clear",
 	]
 	for t in tests:
@@ -180,6 +180,21 @@ func _jump_policy(slot: int, cube: PlayerCube, want_up: bool) -> bool:
 	var jump: bool = rising or (want_up and not (cube.is_on_floor() and _last_jump[slot]))
 	_last_jump[slot] = jump
 	return jump
+
+
+## Waypoints in local cubes, with extra points on long flat stretches so a climbing pair
+## never has to spread wider than the rope.
+func _route(room: int, points: Array) -> Array:
+	var out := []
+	for i in points.size():
+		if i > 0 and points[i][1] == points[i - 1][1]:
+			var from: float = points[i - 1][0]
+			var to: float = points[i][0]
+			var steps := int(ceil(absf(to - from) / 1.4))
+			for k in range(1, steps):
+				out.append(spot(room, lerpf(from, to, float(k) / steps), points[i][1]))
+		out.append(spot(room, points[i][0], points[i][1]))
+	return out
 
 
 func check(cond: bool, message: String) -> bool:
@@ -360,19 +375,56 @@ func test_wall_unreachable() -> bool:
 
 
 func test_seam_crossing() -> bool:
-	# Room 5 to 6: the broken corner and the holds that clip into the wall lead through.
+	# Room 5 to 6, from the room's entrance: the pair climbs the stairs to the summit, one
+	# hops onto the glitching bump and jumps, and the seam pulls both past the wall.
 	await fresh(4)
-	place(spot(4, 21.5, 6.0), spot(4, 23.0, 6.0))
+	var r: StageGenerator.Room = stage.rooms[4]
+	place(r.spawns[0], r.spawns[1])
 	await frames(10)
-	var path := [
-		spot(4, 20.5, 6.0), spot(4, 19.5, 7.0), spot(4, 18.5, 8.0), spot(4, 17.5, 9.0),
-		spot(4, 16.5, 10.0), spot(4, 15.3, 11.0), spot(4, 14.0, 11.0),
-	]
+	var path := _route(4, [[4.5, 0.0], [11.4, 0.0], [12.5, 1.0], [13.5, 1.0], [14.5, 2.0], [15.5, 2.0],
+			[16.5, 3.0], [17.5, 4.0], [18.5, 5.0], [19.5, 5.0], [20.5, 6.0], [21.4, 6.0]])
 	var climbed := await climb_together(path)
+	var jumped := await follow(0, [spot(4, 22.5, 7.0)], 240)
+	inp(0, 0.0, true)
+	await frames(2)
+	inp(0, 0.0)
 	await frames(30)
-	return check(climbed, "could not climb the seam") \
+	return check(climbed, "could not climb the stairs to the summit") \
+			and check(jumped or main.corrupted, "could not get onto the glitching bump") \
 			and check(main.checkpoint == 5, "checkpoint did not move to room 6 (%d)" % main.checkpoint) \
 			and check(main.corrupted, "world did not corrupt after the seam")
+
+
+func test_room_paths() -> bool:
+	# From each room's spawn, the pair can walk and climb to the start of its puzzle.
+	var ok := true
+	var routes := {
+		1: [[4.5, 0.0], [10.5, 0.0]],
+		2: [],
+		3: [[4.5, 0.0], [5.5, 1.0], [6.5, 2.0], [7.5, 3.0], [8.5, 4.0], [9.5, 5.0], [10.5, 6.0], [11.5, 6.0], [12.6, 6.0]],
+		6: [],
+	}
+	await fresh(2)
+	var near := _gap_near(2)
+	var gap_route := [[4.5, 0.0], [near - 5.6, 0.0]]
+	for k in range(1, 6):
+		gap_route.append([near - 5 + k - 0.5, float(k)])
+	gap_route += [[near + 0.5, 6.0], [near + 1.6, 6.0]]
+	routes[2] = gap_route
+	routes[6] = [[9.5, 2.0], [10.5, 3.0], [11.5, 4.0], [12.5, 5.0], [13.5, 6.0], [14.6, 6.0]]
+	for room in routes:
+		await fresh(room)
+		var r: StageGenerator.Room = stage.rooms[room]
+		if room == 6:
+			# Room 7 starts after its lip, which needs the stack (tested elsewhere).
+			place(spot(room, 9.5, 2.0), spot(room, 8.5, 2.0))
+		else:
+			place(r.spawns[0], r.spawns[1])
+		await frames(10)
+		if not await climb_together(_route(room, routes[room])):
+			print("      room %d: could not reach the puzzle from the spawn" % (room + 1))
+			ok = false
+	return ok
 
 
 func test_exits() -> bool:

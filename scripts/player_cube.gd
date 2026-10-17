@@ -1,8 +1,10 @@
 class_name PlayerCube
 extends CharacterBody2D
 
-## One climber. The game feeds it input and the rope feeds it a force; `step()` is called
-## by the simulating peer only. Clients receive snapshots and just animate.
+## One climber. The game feeds it input and the rope feeds it a force, then calls
+## `step()` once per tick. Online, netfox records the state in `ROLLBACK_STATE` every tick
+## and restores it to resimulate, so the floor and wall contacts that the next step needs
+## are kept as plain fields instead of being read back from the last `move_and_slide()`.
 
 const TEX_IDLE := preload("res://Assets/cubo_parado_dir.svg")
 const TEX_WALK := preload("res://Assets/cubo_andar_1_dir.svg")
@@ -20,10 +22,12 @@ const GLITCH_PALETTE: Array[Color] = [
 
 const SQUASH_SMOOTH := 16.0
 
-const FLAG_FLOOR := 1
-const FLAG_LEFT := 2
-const FLAG_CLIMB := 4
-const FLAG_LAND := 8
+## Everything `step()` reads from the previous tick, as netfox property paths.
+const ROLLBACK_STATE: Array[String] = [
+	":global_position", ":velocity", ":rope_force", ":climb_target", ":climb_available", ":climbing",
+	":on_floor", ":on_wall", ":on_ceiling", ":wall_normal", ":facing_left", ":ending_fall",
+	":_jump_prev", ":_jumping", ":_grounded_last", ":_coyote", ":_jump_buffer",
+]
 
 @export var player_index: int = 0
 @export var base_color: Color = Color(1.0, 0.56, 0.3):
@@ -42,15 +46,27 @@ var rope_force: Vector2 = Vector2.ZERO
 var climb_target: Vector2 = Vector2.ZERO
 var climb_available: bool = false
 
-## False on a client: the cube then only follows snapshots from the host.
-var simulated: bool = true
-var climbing: bool = false
+var climbing: bool = false:
+	set(value):
+		climbing = value
+		_update_layers()
+var ending_fall: bool = false:
+	set(value):
+		ending_fall = value
+		_update_layers()
 var corrupted: bool = false
-var ending_fall: bool = false
 var facing_left: bool = false
+## Contacts from the last move.
+var on_floor: bool = false
+var on_wall: bool = false
+var on_ceiling: bool = false
+var wall_normal: Vector2 = Vector2.ZERO
+## False while netfox resimulates ticks that already played: no dust or squash again.
+var fx_enabled: bool = true
 
 var _jump_prev: bool = false
 var _jumping: bool = false
+var _grounded_last: bool = false
 var _coyote: float = 0.0
 var _jump_buffer: float = 0.0
 var _land_timer: float = 0.0
@@ -63,10 +79,6 @@ var _glitch_amount: float = 0.0
 var _anim_on_floor: bool = true
 var _visual_scale := Vector2.ONE
 var _step_phase: float = 0.0
-
-# Client-side interpolation target.
-var _net_target: Vector2 = Vector2.ZERO
-var _net_has_target: bool = false
 
 @onready var _visual: Node2D = $Visual
 @onready var sprite: Sprite2D = $Visual/Sprite2D
@@ -82,12 +94,17 @@ func _ready() -> void:
 
 
 func step(delta: float) -> void:
-	var was_on_floor := is_on_floor()
+	var was_on_floor := on_floor
 	if ending_fall:
 		velocity.y = minf(velocity.y + Tuning.GRAVITY * delta, Tuning.MAX_FALL_SPEED)
 		global_position += velocity * delta
 		return
 
+	if _grounded_last and not was_on_floor and not _jumping:
+		# Walking off a ledge carries no more speed than a jump does, so a 2-cube gap
+		# can't be crossed by running off the edge either.
+		velocity.x = clampf(velocity.x, -Tuning.AIR_SPEED, Tuning.AIR_SPEED)
+	_grounded_last = was_on_floor
 	_coyote = Tuning.COYOTE_TIME if was_on_floor else maxf(0.0, _coyote - delta)
 	var jump := input_jump and not input_locked
 	if jump and not _jump_prev:
@@ -97,10 +114,9 @@ func step(delta: float) -> void:
 	_jump_prev = jump
 	var axis := 0.0 if input_locked else input_axis
 
+	# A climbing cube hangs on the rope: the partner cannot stand on it or ride it.
 	climbing = input_climb and not input_locked and climb_available \
 			and (not was_on_floor or climb_target.y < global_position.y - 8.0)
-	# A climbing cube hangs on the rope: the partner cannot stand on it or ride it.
-	collision_layer = 0 if climbing else 2
 	if climbing:
 		_step_climb()
 		return
@@ -130,16 +146,17 @@ func step(delta: float) -> void:
 		elif axis != 0.0 and not (signf(velocity.x) == axis and absf(velocity.x) > Tuning.AIR_SPEED):
 			velocity.x = move_toward(velocity.x, axis * Tuning.AIR_SPEED, Tuning.AIR_ACCEL * delta)
 		velocity += force * delta
-		if is_on_wall():
+		if on_wall:
 			# Hauled against a wall, the rope drags the cube up the face toward the lip.
-			var into := -force.dot(get_wall_normal())
+			var into := -force.dot(wall_normal)
 			if into > 0.0 and force.y < 0.0:
 				velocity.y -= into * delta
 
 	if _jump_buffer > 0.0 and _coyote > 0.0:
 		velocity.y = -Tuning.JUMP_VELOCITY
 		velocity.x = clampf(velocity.x, -Tuning.AIR_SPEED, Tuning.AIR_SPEED)
-		_on_jumped()
+		if fx_enabled:
+			_on_jumped()
 		_jumping = true
 		_jump_buffer = 0.0
 		_coyote = 0.0
@@ -150,8 +167,8 @@ func step(delta: float) -> void:
 		_jumping = false
 
 	var fall_speed := velocity.y
-	move_and_slide()
-	if not was_on_floor and is_on_floor():
+	_move()
+	if not was_on_floor and on_floor and fx_enabled:
 		_land_timer = 0.14
 		_on_landed()
 		if corrupted and fall_speed > 650.0:
@@ -159,8 +176,8 @@ func step(delta: float) -> void:
 
 	# Step over small lips, grounded or not (standing on the partner leaves you a hair
 	# below the next step).
-	if is_on_wall():
-		var into := -signf(get_wall_normal().x)
+	if on_wall:
+		var into := -signf(wall_normal.x)
 		var pulled := force.x * into > 200.0
 		if (axis == into or pulled) and velocity.y > -200.0:
 			_try_mantle(into)
@@ -176,20 +193,33 @@ func _step_climb() -> void:
 		# Level with the target: step sideways onto the hold, never above it (climbing
 		# past the partner's feet would lift the partner off its hold).
 		velocity = Vector2(signf(to.x) * Tuning.CLIMB_SPEED if absf(to.x) > 2.0 else 0.0, 0.0)
-	if is_on_wall():
+	if on_wall:
 		# Hand over hand up a rope that hugs a wall: slide along it instead of into it.
-		var n := get_wall_normal()
+		var n := wall_normal
 		if velocity.dot(n) < 0.0:
 			velocity -= n * velocity.dot(n)
 			velocity = velocity.normalized() * Tuning.CLIMB_SPEED if velocity.length() > 1.0 else Vector2.ZERO
-	if is_on_ceiling() and velocity.y < 0.0:
+	if on_ceiling and velocity.y < 0.0:
 		# Under a ledge's lip: shuffle out to the nearer side that is open above.
 		velocity = Vector2(_open_side() * Tuning.CLIMB_SPEED, 0.0)
-	move_and_slide()
-	if is_on_wall():
-		_try_mantle(-signf(get_wall_normal().x))
+	_move()
+	if on_wall:
+		_try_mantle(-signf(wall_normal.x))
 	if absf(to.x) > 1.0:
 		facing_left = to.x < 0.0
+
+
+func _move() -> void:
+	move_and_slide()
+	on_floor = is_on_floor()
+	on_wall = is_on_wall()
+	on_ceiling = is_on_ceiling()
+	wall_normal = get_wall_normal() if on_wall else Vector2.ZERO
+
+
+func _update_layers() -> void:
+	collision_layer = 0 if climbing or ending_fall else 2
+	collision_mask = 0 if ending_fall else 3
 
 
 func _open_side() -> float:
@@ -223,14 +253,16 @@ func teleport(pos: Vector2) -> void:
 	rope_force = Vector2.ZERO
 	climbing = false
 	_jumping = false
-	_net_target = pos
-	_net_has_target = false
+	_grounded_last = false
+	on_floor = false
+	on_wall = false
+	on_ceiling = false
 
 
 func set_ending_fall(on: bool) -> void:
 	ending_fall = on
-	collision_mask = 0 if on else 3
-	collision_layer = 0 if on else 2
+	if on:
+		on_floor = false
 
 
 func set_corrupted(on: bool) -> void:
@@ -238,41 +270,8 @@ func set_corrupted(on: bool) -> void:
 	_apply_colors()
 
 
-func net_flags() -> int:
-	var flags := 0
-	if is_on_floor():
-		flags |= FLAG_FLOOR
-	if facing_left:
-		flags |= FLAG_LEFT
-	if climbing:
-		flags |= FLAG_CLIMB
-	if _land_timer > 0.0:
-		flags |= FLAG_LAND
-	return flags
-
-
-func apply_snapshot(pos: Vector2, vel: Vector2, flags: int) -> void:
-	if not _net_has_target or pos.distance_to(global_position) > Tuning.CUBE * 3.0:
-		global_position = pos
-	_net_target = pos
-	_net_has_target = true
-	velocity = vel
-	var on_floor := flags & FLAG_FLOOR != 0
-	if _anim_on_floor and not on_floor and vel.y < -200.0:
-		_on_jumped()
-	_anim_on_floor = on_floor
-	facing_left = flags & FLAG_LEFT != 0
-	climbing = flags & FLAG_CLIMB != 0
-	if flags & FLAG_LAND != 0 and _land_timer <= 0.0:
-		_land_timer = 0.14
-		_on_landed()
-
-
 func _process(delta: float) -> void:
-	if not simulated and _net_has_target:
-		global_position = global_position.lerp(_net_target, 1.0 - exp(-delta * 25.0))
-	elif simulated:
-		_anim_on_floor = is_on_floor()
+	_anim_on_floor = on_floor
 	_land_timer = maxf(0.0, _land_timer - delta)
 	_hurt_timer = maxf(0.0, _hurt_timer - delta)
 	_update_texture(delta)

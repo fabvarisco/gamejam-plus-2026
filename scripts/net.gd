@@ -1,8 +1,12 @@
 extends Node
 
-## Session layer. One player hosts and simulates, the other joins with a room code.
-## The code is the host's LAN IPv4 packed into base32, so joining works on the same
-## network (or with the port forwarded). LOCAL is a debug-only split-keyboard mode.
+## Session layer. One player hosts, the other joins with a room code. The code is the
+## host's LAN IPv4 packed into base32, so joining works on the same network (or with the
+## port forwarded). LOCAL is a debug-only split-keyboard mode.
+##
+## The game itself runs on netfox's clock (`NetworkTime`). The host starts it when the
+## room opens; a client starts it only once its game scene is loaded and the host has
+## answered (see main.gd), so a loading stall never skews the clock sync.
 
 signal partner_joined
 signal partner_left
@@ -50,6 +54,7 @@ func host() -> Error:
 	mode = Mode.HOST
 	stage_seed = randi() % 1000000 + 1
 	room_code = encode_code(_local_ipv4())
+	start_clock()
 	return OK
 
 
@@ -76,7 +81,15 @@ func start_local(seed_value: int = 0) -> void:
 	_enter_game()
 
 
+## Starts netfox's tick loop and clock sync for this peer.
+func start_clock() -> void:
+	var time := get_node("/root/NetworkTime")
+	if not time.is_initial_sync_done():
+		time.start()
+
+
 func close() -> void:
+	get_node("/root/NetworkTime").stop()
 	if multiplayer.multiplayer_peer != null and not (multiplayer.multiplayer_peer is OfflineMultiplayerPeer):
 		multiplayer.multiplayer_peer.close()
 	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()

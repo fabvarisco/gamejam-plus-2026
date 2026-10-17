@@ -38,7 +38,7 @@ func apply_time(t: float) -> void:
 	_warning = now_solid and local > PERIOD - WARN_TIME
 	if now_solid != solid:
 		solid = now_solid
-		_shape.set_deferred("disabled", not solid)
+		_shape.disabled = not solid
 
 
 func _process(_delta: float) -> void:
@@ -55,4 +55,4 @@ func _draw() -> void:
 		return
 	draw_set_transform(_jit)
 	var blocks: Array[Rect2] = [rect]
-	TerrainArt.paint(self, blocks, true)
+	TerrainArt.paint(self, blocks, Themes.Style.GRID)

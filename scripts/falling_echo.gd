@@ -1,7 +1,7 @@
 class_name FallingEcho
 extends Node2D
 
-## Room 4's falling cubes: two cubes tied by a rope, tumbling down the face in the same
+## The camp's falling cubes: two cubes tied by a rope, tumbling down the face in the same
 ## fall sprite the players use, their colors already refusing to hold still. They are the
 ## players, later; nothing here says so.
 

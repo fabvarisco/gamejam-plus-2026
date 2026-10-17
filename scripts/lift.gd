@@ -2,9 +2,10 @@
 class_name Lift
 extends AnimatableBody2D
 
-## Room 4's weighted platform. It stays down while a cube stands on it; once it has
+## The camp's weighted platform. It stays down while a cube stands on it; once it has
 ## been used and both cubes leave it, it rises out of reach and stays up until the room
-## resets. Moved by the simulating peer inside the physics step.
+## resets. Moved inside the simulation step; its position applies to physics at once, so
+## a rewound tick sees the lift where it was.
 
 const RISE_SPEED := 70.0
 const SINK_SPEED := 120.0
@@ -22,7 +23,7 @@ func setup(r: Rect2, rise_px: float, ceiling: float) -> void:
 	ceiling_y = ceiling
 	collision_layer = 1
 	collision_mask = 0
-	sync_to_physics = true
+	sync_to_physics = false
 	position = r.get_center()
 	var shape := RectangleShape2D.new()
 	shape.size = r.size
@@ -42,7 +43,7 @@ func update(delta: float, cubes: Array) -> void:
 		var c := cube as PlayerCube
 		var feet := c.global_position.y + Tuning.CUBE * 0.5
 		var over := c.global_position.x + Tuning.CUBE * 0.45 > top.position.x and c.global_position.x - Tuning.CUBE * 0.45 < top.end.x
-		if c.is_on_floor() and over and absf(feet - top.position.y) < 6.0:
+		if c.on_floor and over and absf(feet - top.position.y) < 6.0:
 			occupied = true
 	if occupied:
 		triggered = true

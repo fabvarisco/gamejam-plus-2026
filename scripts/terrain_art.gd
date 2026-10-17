@@ -4,23 +4,27 @@ extends Node2D
 
 ## Paints collision rectangles as gooey rock: a thick dark outline, a rounded body, a
 ## glossy top and drips under exposed undersides. All outlines are drawn before all
-## fills, so touching blocks merge into one mass. The corrupted style past the seam is
-## flat interface gray with a pixel grid and offset copies of its own outline.
+## fills, so touching blocks merge into one mass. Each honest room tints the rock with
+## its own palette (see `Themes`). Past the seam the rock is drawn as the program: flat
+## interface gray with a pixel grid, a wireframe, debug collision boxes, or the village
+## rock reused with its colors swapped, always with offset copies of its own outline.
 
-const HONEST_OUTLINE := Color(0.12, 0.06, 0.05)
-const HONEST_FILL := Color(0.33, 0.19, 0.11)
-const HONEST_INNER := Color(0.4, 0.25, 0.14)
-const HONEST_TOP := Color(0.58, 0.4, 0.2)
+const HONEST: Array = [Color(0.12, 0.06, 0.05), Color(0.33, 0.19, 0.11), Color(0.4, 0.25, 0.14), Color(0.58, 0.4, 0.2)]
 const CORRUPT_OUTLINE := Color(0.05, 0.05, 0.08)
 const CORRUPT_FILL := Color(0.24, 0.25, 0.3)
 const CORRUPT_GRID := Color(0.42, 0.46, 0.54, 0.5)
 const GHOST_A := Color(0.95, 0.2, 0.75, 0.35)
 const GHOST_B := Color(0.2, 0.9, 1.0, 0.3)
+const WIRE_FILL := Color(0.03, 0.06, 0.1, 0.92)
+const WIRE_EDGE := Color(0.3, 0.95, 1.0, 0.9)
+const DEBUG_BOX := Color(0.3, 1.0, 0.45, 0.85)
 
 var rects: Array[Rect2] = []
 ## One-way floors: drawn as a sagging goo membrane so they read as passable from below.
 var bridges: Array[Rect2] = []
-var corrupt: bool = false
+var style: Themes.Style = Themes.Style.GOO
+## Outline, body, inner body and top colors for the goo styles.
+var palette: Array = HONEST
 var jitter: bool = false
 var seed_value: int = 0
 
@@ -36,7 +40,7 @@ func finalize() -> void:
 	_drips.clear()
 	_specks.clear()
 	for r in rects:
-		if not corrupt and not _covered(Vector2(r.get_center().x, r.end.y + 3.0), r):
+		if (style == Themes.Style.GOO or style == Themes.Style.REUSED) and not _covered(Vector2(r.get_center().x, r.end.y + 3.0), r):
 			var count := rng.randi_range(0, mini(3, int(r.size.x / Tuning.CUBE)))
 			for i in count:
 				var x := rng.randf_range(r.position.x + 6.0, r.end.x - 6.0)
@@ -60,16 +64,17 @@ func _process(delta: float) -> void:
 
 func _draw() -> void:
 	draw_set_transform(_offset)
-	if not corrupt:
+	var goo := style == Themes.Style.GOO or style == Themes.Style.REUSED
+	if goo:
 		for d in _drips:
-			_drip(d, HONEST_OUTLINE, 3.0)
-	paint(self, rects, corrupt)
-	paint_bridges(self, bridges, corrupt)
-	if not corrupt:
+			_drip(d, palette[0], 3.0)
+	paint(self, rects, style, palette)
+	paint_bridges(self, bridges, style, palette)
+	if goo:
 		for d in _drips:
-			_drip(d, HONEST_FILL, 0.0)
+			_drip(d, palette[1], 0.0)
 		for s in _specks:
-			draw_circle(Vector2(s.x, s.y), s.z, HONEST_INNER.darkened(0.25))
+			draw_circle(Vector2(s.x, s.y), s.z, (palette[2] as Color).darkened(0.25))
 
 
 func _drip(d: Vector3, color: Color, extra: float) -> void:
@@ -87,8 +92,11 @@ func _covered(point: Vector2, except: Rect2) -> bool:
 	return false
 
 
-static func paint(ci: CanvasItem, blocks: Array[Rect2], corrupt_style: bool) -> void:
-	if corrupt_style:
+static func paint(ci: CanvasItem, blocks: Array[Rect2], style: Themes.Style, colors: Array = HONEST) -> void:
+	if style == Themes.Style.WIRE:
+		_paint_wire(ci, blocks)
+		return
+	if style == Themes.Style.GRID or style == Themes.Style.DEBUG:
 		for r in blocks:
 			ci.draw_colored_polygon(rounded(r.grow(2.0), 3.0), CORRUPT_OUTLINE)
 		for r in blocks:
@@ -104,23 +112,55 @@ static func paint(ci: CanvasItem, blocks: Array[Rect2], corrupt_style: bool) -> 
 		for r in blocks:
 			ci.draw_rect(Rect2(r.position + Vector2(6.0, -4.0), r.size), GHOST_A, false, 1.5)
 			ci.draw_rect(Rect2(r.position + Vector2(-5.0, 3.0), r.size), GHOST_B, false, 1.5)
+		if style == Themes.Style.DEBUG:
+			# Collision boxes drawn over the art, as an engine's debug view would.
+			for r in blocks:
+				ci.draw_rect(r, DEBUG_BOX, false, 2.0)
+				ci.draw_line(r.position, r.end, Color(DEBUG_BOX, 0.35), 1.0)
 		return
 	for r in blocks:
-		ci.draw_colored_polygon(rounded(r.grow(3.0), 10.0), HONEST_OUTLINE)
+		ci.draw_colored_polygon(rounded(r.grow(3.0), 10.0), colors[0])
 	for r in blocks:
-		ci.draw_colored_polygon(rounded(r, 8.0), HONEST_FILL)
+		ci.draw_colored_polygon(rounded(r, 8.0), colors[1])
 	for r in blocks:
 		if r.size.x > 16.0 and r.size.y > 16.0:
-			ci.draw_colored_polygon(rounded(r.grow(-7.0), 5.0), HONEST_INNER)
+			ci.draw_colored_polygon(rounded(r.grow(-7.0), 5.0), colors[2])
 	for r in blocks:
 		if not _covered_in(blocks, Vector2(r.get_center().x, r.position.y - 2.0), r):
-			ci.draw_colored_polygon(rounded(Rect2(r.position.x + 4.0, r.position.y + 2.0, r.size.x - 8.0, 6.0), 3.0), HONEST_TOP)
+			ci.draw_colored_polygon(rounded(Rect2(r.position.x + 4.0, r.position.y + 2.0, r.size.x - 8.0, 6.0), 3.0), colors[3])
+	if style == Themes.Style.REUSED:
+		for r in blocks:
+			ci.draw_rect(Rect2(r.position + Vector2(7.0, -5.0), r.size), GHOST_A, false, 1.5)
 
 
-static func paint_bridges(ci: CanvasItem, spans: Array[Rect2], corrupt_style: bool) -> void:
+## The mountain as an untextured mesh: dark faces, bright edges, one diagonal per cell.
+static func _paint_wire(ci: CanvasItem, blocks: Array[Rect2]) -> void:
+	var c := Tuning.CUBE
+	for r in blocks:
+		ci.draw_rect(r, WIRE_FILL)
+	for r in blocks:
+		var x := r.position.x
+		while x < r.end.x - 0.5:
+			var y := r.position.y
+			while y < r.end.y - 0.5:
+				var w := minf(c, r.end.x - x)
+				var h := minf(c, r.end.y - y)
+				ci.draw_line(Vector2(x, y + h), Vector2(x + w, y), Color(WIRE_EDGE, 0.35), 1.0)
+				y += c
+			x += c
+		ci.draw_rect(r, WIRE_EDGE, false, 1.5)
+		for p in [r.position, Vector2(r.end.x, r.position.y), r.end, Vector2(r.position.x, r.end.y)]:
+			ci.draw_rect(Rect2(p - Vector2(2.0, 2.0), Vector2(4.0, 4.0)), WIRE_EDGE)
+
+
+static func paint_bridges(ci: CanvasItem, spans: Array[Rect2], style: Themes.Style, colors: Array = HONEST) -> void:
 	for r in spans:
 		var top := r.position.y
-		if corrupt_style:
+		if style == Themes.Style.WIRE:
+			ci.draw_rect(Rect2(r.position.x, top, r.size.x, 6.0), WIRE_FILL)
+			ci.draw_rect(Rect2(r.position.x, top, r.size.x, 6.0), WIRE_EDGE, false, 1.5)
+			continue
+		if style == Themes.Style.GRID or style == Themes.Style.DEBUG:
 			ci.draw_rect(Rect2(r.position.x, top, r.size.x, 6.0), CORRUPT_FILL)
 			var x := r.position.x
 			while x < r.end.x:
@@ -133,11 +173,11 @@ static func paint_bridges(ci: CanvasItem, spans: Array[Rect2], corrupt_style: bo
 		for i in steps + 1:
 			var x := r.position.x + r.size.x * i / steps
 			pts.append(Vector2(x, top + 3.0 + sin(PI * i / steps) * 7.0))
-		ci.draw_polyline(pts, HONEST_OUTLINE, 9.0)
-		ci.draw_polyline(pts, HONEST_TOP, 4.0)
+		ci.draw_polyline(pts, colors[0], 9.0)
+		ci.draw_polyline(pts, colors[3], 4.0)
 		for i in range(1, steps, 2):
 			var p := pts[i]
-			ci.draw_line(p, p + Vector2(0.0, 6.0 + (i % 3) * 3.0), HONEST_OUTLINE, 3.0)
+			ci.draw_line(p, p + Vector2(0.0, 6.0 + (i % 3) * 3.0), colors[0], 3.0)
 
 
 static func _covered_in(blocks: Array[Rect2], point: Vector2, except: Rect2) -> bool:

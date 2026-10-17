@@ -33,7 +33,7 @@ func fail() -> void:
 		return
 	failed = true
 	for cs in _shapes:
-		cs.set_deferred("disabled", true)
+		cs.disabled = true
 	_pieces.clear()
 	for r in rects + bridges:
 		var x := r.position.x
@@ -50,7 +50,7 @@ func restore() -> void:
 	failed = false
 	_pieces.clear()
 	for cs in _shapes:
-		cs.set_deferred("disabled", false)
+		cs.disabled = false
 	queue_redraw()
 
 
@@ -70,10 +70,10 @@ func _process(delta: float) -> void:
 
 func _draw() -> void:
 	if not failed:
-		TerrainArt.paint(self, rects, true)
-		TerrainArt.paint_bridges(self, bridges, true)
+		TerrainArt.paint(self, rects, Themes.Style.GRID)
+		TerrainArt.paint_bridges(self, bridges, Themes.Style.GRID)
 		return
 	var pieces: Array[Rect2] = []
 	for p in _pieces:
 		pieces.append(p["rect"])
-	TerrainArt.paint(self, pieces, true)
+	TerrainArt.paint(self, pieces, Themes.Style.GRID)

@@ -37,4 +37,4 @@ const SWING_MAX_SPEED := 720.0
 const ROOM_W := 30
 const ROOM_H := 10
 const ROOM_PITCH := 11
-const ROOM_COUNT := 8
+const ROOM_COUNT := 13

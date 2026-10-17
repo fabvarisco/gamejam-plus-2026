@@ -9,27 +9,27 @@ func _initialize() -> void:
 	var out: String = OS.get_cmdline_user_args()[0]
 	for room in Tuning.ROOM_COUNT:
 		await fresh(room, 3)
-		if room >= 5:
-			main._apply_event("checkpoint", [5])
+		if room >= SEAM:
+			main.set_checkpoint(SEAM)
 		main.checkpoint = room
 		var r: StageGenerator.Room = stage.rooms[room]
 		place(r.spawns[0], r.spawns[1])
 		main.camera.global_position = stage.room_center(room)
 		await frames(90)
 		await _shot(out + "/room_%d.png" % (room + 1))
-	# The witness beat in room 4.
-	await fresh(3, 3)
-	place(spot(3, 25.0, 7.0), spot(3, 26.3, 7.0))
-	main.camera.global_position = stage.room_center(3)
+	# The witness beat at the camp.
+	await fresh(CAMP, 3)
+	place(spot(CAMP, 25.0, 7.0), spot(CAMP, 26.3, 7.0))
+	main.camera.global_position = stage.room_center(CAMP)
 	await frames(75)
 	await _shot(out + "/witness_fall.png")
 	await frames(60)
 	await _shot(out + "/witness.png")
-	# A swing in room 3.
-	await fresh(2, 3)
-	var near := _gap_near(2)
-	place(spot(2, near + 2.45, 6.0), spot(2, near + 4.2, 3.0))
-	main.camera.global_position = stage.room_center(2)
+	# A swing over the gorge.
+	await fresh(GORGE, 3)
+	var near := _gap_near(GORGE)
+	place(spot(GORGE, near + 2.45, 6.0), spot(GORGE, near + 4.2, 3.0))
+	main.camera.global_position = stage.room_center(GORGE)
 	await frames(60)
 	await _shot(out + "/swing.png")
 	quit()

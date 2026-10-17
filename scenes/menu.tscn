@@ -8,7 +8,6 @@
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_sky"]
 shader = ExtResource("2_sky")
 shader_parameter/corruption = 0.0
-shader_parameter/height = 0.15
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_p1"]
 shader = ExtResource("4_recolor")

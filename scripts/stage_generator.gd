@@ -46,6 +46,8 @@ var lift_stuck_zone := Rect2()
 ## the broken corner, and pulls its partner with it.
 var seam_trigger := Rect2()
 var witness_spots: Array[Vector2] = []
+## Where the village elder stands to welcome the climbers (feet on the ground).
+var elder_spot := Vector2.ZERO
 var echo_x: float = 0.0
 var moon: Decor
 var lift: Lift
@@ -212,6 +214,7 @@ func _build_village(room: Room) -> void:
 	_stairs(room, 18, 24, 1, 6)
 	_exit_steps(room)
 	room.spawns = [_spot(room, 3.0, 0.0), _spot(room, 4.5, 0.0)]
+	elder_spot = _ground(room, 8.6)
 
 	_decor(room, Decor.Kind.SUN, _spot(room, 32.6, 8.0), Vector2(1.6, 1.6) * C)
 	var hx := 0.4

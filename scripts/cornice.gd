@@ -40,7 +40,7 @@ func update(cubes: Array) -> void:
 		var feet := c.global_position.y + Tuning.CUBE * 0.5
 		# Mostly on it: a cube with only a corner over the snow stands on the rock.
 		var over := c.global_position.x > rect.position.x and c.global_position.x < rect.end.x
-		if c.is_on_floor() and over and absf(feet - rect.position.y) < 6.0:
+		if c.on_floor and over and absf(feet - rect.position.y) < 6.0:
 			on += 1
 	_loaded = on > 0
 	if on >= 2:
@@ -51,7 +51,7 @@ func set_intact(value: bool) -> void:
 	if value == intact:
 		return
 	intact = value
-	_shape.set_deferred("disabled", not intact)
+	_shape.disabled = not intact
 	_chunks.clear()
 	if not intact:
 		var x := rect.position.x

@@ -48,7 +48,7 @@ func _initialize() -> void:
 		if arg.begins_with("seed="):
 			default_seed = int(arg.trim_prefix("seed="))
 	var tests := [
-		"test_settle", "test_hang_holds", "test_solo_step", "test_solo_lip_fails", "test_stack_climbs_lip",
+		"test_intro", "test_settle", "test_hang_holds", "test_solo_step", "test_solo_lip_fails", "test_stack_climbs_lip",
 		"test_haul_up_lip", "test_climb_recovery", "test_solo_gap_fails", "test_swing_crosses_gap",
 		"test_anchor_follows", "test_water_resets", "test_lift", "test_witness", "test_cornice_breaks_under_two",
 		"test_cornice_one_at_a_time", "test_loading_bar_crossing", "test_loading_bar_empties", "test_wall_unreachable",
@@ -78,6 +78,8 @@ func fresh(checkpoint: int = 0, seed_value: int = -1) -> void:
 	main = main_scene.instantiate()
 	main.test_mode = true
 	root.add_child(main)
+	# Tests start past the elder's welcome (test_intro covers it).
+	main.intro_t = -1.0
 	await process_frame
 	stage = main.stage
 	a = main.player_1
@@ -221,6 +223,34 @@ func check(cond: bool, message: String) -> bool:
 
 
 # --- Tests ---------------------------------------------------------------------------
+
+func test_intro() -> bool:
+	# The climb opens with the elder's welcome: nobody moves until it ends, a jump in its
+	# first moment is ignored, a later jump skips it, and otherwise it ends by itself.
+	await fresh(VILLAGE)
+	main.intro_t = 0.0
+	var start := a.global_position
+	for i in 50:
+		inp(0, 1.0, i < 5)
+		await physics_frame
+	var locked: bool = absf(a.global_position.x - start.x) < 1.0 and main.intro_t > 0.0
+	inp(0, 0.0)
+	await frames(30)
+	inp(1, 0.0, true)
+	await frames(3)
+	var skipped: bool = main.intro_t < 0.0
+	idle()
+	for i in 30:
+		inp(0, 1.0)
+		await physics_frame
+	var moves := a.global_position.x - start.x > C * 0.5
+	main.intro_t = 0.0
+	await frames(int(60 * (main.intro_duration() + 0.2)))
+	return check(locked, "the cubes moved during the welcome") \
+			and check(skipped, "a jump did not skip the welcome (intro_t %.2f)" % main.intro_t) \
+			and check(moves, "the cubes could not move after the welcome") \
+			and check(main.intro_t < 0.0, "the welcome did not end by itself")
+
 
 func test_settle() -> bool:
 	await fresh()
@@ -401,7 +431,7 @@ func test_witness() -> bool:
 	await fresh(CAMP)
 	place(spot(CAMP, 25.0, 7.0), spot(CAMP, 26.3, 7.0))
 	await frames(30)
-	var started: bool = main._witness_t >= 0.0
+	var started: bool = main.witness_t >= 0.0
 	await frames(int(60 * 7.5))
 	return check(started, "witness cutscene did not start") and check(main.witness_done, "witness cutscene did not end")
 
@@ -538,7 +568,7 @@ func test_exits() -> bool:
 			continue
 		await fresh(room)
 		if room >= SEAM:
-			main._apply_event("checkpoint", [SEAM])
+			main.set_checkpoint(SEAM)
 			main.checkpoint = room
 		var path := []
 		if room == SEAM:
@@ -561,18 +591,18 @@ func test_exits() -> bool:
 
 func test_ending() -> bool:
 	await fresh(EDGE - 1)
-	main._apply_event("checkpoint", [SEAM])
-	main._apply_event("checkpoint", [EDGE])
+	main.set_checkpoint(SEAM)
+	main.set_checkpoint(EDGE)
 	main._place_at_checkpoint()
 	await frames(20)
 	var t := 0
-	while t < 60 * 16 and main._ending < 3:
+	while t < 60 * 16 and main.ending < 3:
 		# Toward the border, which is at the edge room's local left.
 		inp(0, -fwd(EDGE))
 		inp(1, -fwd(EDGE))
 		await physics_frame
 		t += 1
-	return check(main._ending >= 3, "ending did not reach the fade (phase %d)" % main._ending) \
+	return check(main.ending >= 3, "ending did not reach the fade (phase %d)" % main.ending) \
 			and check(stage.fail_floor.failed, "floor did not fail")
 
 

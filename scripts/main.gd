@@ -1,11 +1,24 @@
 extends Node2D
 
-## The climb. The host (or a local debug session) simulates both cubes and the rope and
-## drives the story beats; the client sends its input and renders snapshots. Story beats
-## travel as reliable events so both players see them at the same moment.
+## The climb. One simulation step (`_simulate`) moves the lift, the cubes and the rope and
+## advances the story; everything it reads from the previous tick is plain state.
+##
+## Locally the step runs every physics frame. Online it runs under netfox: each cube has
+## a RollbackSynchronizer for its state and for its player's input (owned by that
+## player), and this node has one for the rope, the lift, the cornices and the story.
+## The host is the authority over all state. The client predicts both cubes from the
+## latest server state and the latest known inputs, and rewinds when a newer server
+## state arrives. Story effects (flash, music, the line, the ending) are played by the
+## presentation layer when it sees the state change, so they need no events.
 
 const C := Tuning.CUBE
 const LINE := "Nossa, ainda bem que não é a gente."
+const INTRO_LINE := "Bem-vindos à Torre Paralelepípeda, vocês foram os cubos escolhidos para subir a torre e chegar à Lua para nos salvar da maldição que transforma os cubos em paralelepípedos. Muitos tentaram e não conseguiram. Boa Sorte!"
+## The elder's line types out at this many characters per second, then stays a while.
+const INTRO_TYPE_RATE := 34.0
+const INTRO_HOLD := 3.0
+## A jump skips the intro, but not in its first moment (a jump still held from the menu).
+const INTRO_SKIP_AFTER := 1.0
 const WITNESS_DURATION := 7.0
 const ENDING_IDLE_LIMIT := 10.0
 const ROOM_FOR_SEAM := StageGenerator.ROOM_SEAM
@@ -14,6 +27,13 @@ const ROOM_EDGE := StageGenerator.ROOM_EDGE
 const SKY_BLEND := 1.5
 const P1_COLOR := Color(1.0, 0.56, 0.28)
 const P2_COLOR := Color(0.3, 0.82, 0.86)
+const PLAYER_INPUT := preload("res://scripts/player_input.gd")
+## The story and the world's moving holds, as netfox property paths (the rope's chain is
+## added from `EntangledRope.ROLLBACK_STATE`).
+const WORLD_STATE: Array[String] = [
+	":checkpoint", ":corrupted", ":witness_done", ":witness_t", ":ending", ":ending_t", ":edge_idle",
+	":resets", ":sim_time", ":lift_state", ":cornice_bits", ":intro_t", ":intro_jump_held",
+]
 
 enum Ending { NONE, MOON, FALL, FADE, DONE }
 
@@ -35,24 +55,54 @@ enum Ending { NONE, MOON, FALL, FADE, DONE }
 var test_mode: bool = false
 var test_inputs: Array = [[0.0, false, false], [0.0, false, false]]
 
+# Simulation state (recorded every tick online).
 var checkpoint: int = 0
 var corrupted: bool = false
 var witness_done: bool = false
-var sim_time: float = 0.0
-var waiting_for_partner: bool = false
+var witness_t: float = -1.0
+## The elder's welcome: seconds since it began, or -1 once the climb has started.
+var intro_t: float = -1.0
+var intro_jump_held: bool = false
+var ending: int = Ending.NONE
+var ending_t: float = 0.0
+var edge_idle: float = 0.0
 var resets: int = 0
+var sim_time: float = 0.0
+var lift_state: Vector2:
+	get:
+		return Vector2(stage.lift.offset, float(stage.lift.triggered)) if stage.lift != null else Vector2.ZERO
+	set(value):
+		if stage.lift != null:
+			stage.lift.triggered = value.y > 0.5
+			stage.lift.apply_offset(value.x)
+var cornice_bits: int:
+	get:
+		return stage.cornice_bits()
+	set(value):
+		stage.apply_cornice_bits(value)
 
-var _remote_input: Array = [0.0, false, false]
-var _witness_t: float = -1.0
-var _ending: Ending = Ending.NONE
-var _ending_t: float = 0.0
-var _edge_idle: float = 0.0
+## Host only: the client is missing, so the climb holds still.
+var waiting_for_partner: bool = false
+
+var _inputs: Array[Node] = []
+var _synchronizers: Array[Node] = []
+## Host only: ticks at which a rejoining partner puts both cubes back on the room floor.
+var _place_ticks: Dictionary = {}
+var _loop_starting: bool = false
 var _glitch_t: float = 0.0
 var _glitch_burst: float = 0.0
 var _corruption_visual: float = 0.0
 var _speech: Label
 var _room_shown: int = -1
 var _room_label_t: float = 0.0
+var _resets_shown: int = 0
+var _corrupted_shown: bool = false
+var _witness_shown: bool = false
+var _ending_shown: int = Ending.NONE
+var _intro_shown: bool = false
+var _intro_speech: Label
+var _elder: Elder
+var _jump_now: bool = false
 var _sky_top := Themes.SKIES[0][0] as Color
 var _sky_bottom := Themes.SKIES[0][1] as Color
 var _sky_stars: float = 0.0
@@ -63,16 +113,22 @@ func _ready() -> void:
 	player_2.base_color = P2_COLOR
 	player_1.player_index = 0
 	player_2.player_index = 1
-	player_1.simulated = Net.is_authority()
-	player_2.simulated = Net.is_authority()
 	rope.stage = stage
 	stage.generation_seed = Net.stage_seed
 	stage.generate()
 	_place_at_checkpoint()
+	_elder = Elder.new()
+	_elder.name = "Elder"
+	_elder.position = stage.elder_spot
+	$Players.add_child(_elder)
+	# Every climb opens with the elder's welcome.
+	intro_t = 0.0
 	camera.global_position = stage.room_center(0)
 	fade.color.a = 1.0
 	create_tween().tween_property(fade, "color:a", 0.0, 0.8)
 	_update_hint()
+	if Net.is_online():
+		_setup_rollback()
 	if Net.mode == Net.Mode.HOST:
 		waiting_for_partner = true
 		Net.partner_left.connect(_on_partner_left)
@@ -86,27 +142,104 @@ func _unhandled_input(event: InputEvent) -> void:
 		Net.leave_to_menu()
 
 
-# --- Simulation ----------------------------------------------------------------------
+# --- Netfox --------------------------------------------------------------------------
 
-func _physics_process(delta: float) -> void:
-	if Net.mode == Net.Mode.CLIENT:
-		var input := _read_input(0)
-		_rpc_input.rpc_id(1, input[0], input[1], input[2])
-		rope.step(delta, player_1, player_2, false)
-		return
-	if waiting_for_partner:
-		rope.step(delta, player_1, player_2, false)
-		return
-	sim_time += delta
-	var locked := _witness_t >= 0.0 or _ending != Ending.NONE
-	var inputs := [_read_input(0), _read_input(1) if Net.mode == Net.Mode.LOCAL else _remote_input]
+func _setup_rollback() -> void:
 	var cubes := [player_1, player_2]
 	for i in 2:
 		var cube: PlayerCube = cubes[i]
-		cube.input_axis = inputs[i][0]
+		var input := PLAYER_INPUT.new()
+		input.name = "Input"
+		# Player 1 is the host. Player 2 belongs to whoever joins; the host learns who
+		# when the client says it is ready.
+		var owner_id := 1 if i == 0 else (multiplayer.get_unique_id() if Net.mode == Net.Mode.CLIENT else -1)
+		input.set_multiplayer_authority(owner_id)
+		cube.add_child(input)
+		_inputs.append(input)
+		var sync := RollbackSynchronizer.new()
+		sync.name = "Rollback"
+		sync.root = cube
+		sync.enable_prediction = true
+		sync.state_properties = PlayerCube.ROLLBACK_STATE
+		sync.input_properties = PLAYER_INPUT.PROPERTIES
+		cube.add_child(sync)
+		_synchronizers.append(sync)
+	var world := RollbackSynchronizer.new()
+	world.name = "Rollback"
+	world.root = self
+	world.enable_prediction = true
+	world.state_properties = WORLD_STATE + EntangledRope.ROLLBACK_STATE
+	add_child(world)
+	_synchronizers.append(world)
+	if Net.mode == Net.Mode.HOST:
+		# Nothing goes to a partner until its game is loaded: packets queued during the
+		# load would arrive seconds stale and flood its rollback.
+		for sync in _synchronizers:
+			sync.visibility_filter.default_visibility = false
+	NetworkRollback.before_loop.connect(_on_before_loop)
+	NetworkRollback.on_prepare_tick.connect(_on_prepare_tick)
+
+
+func _exit_tree() -> void:
+	if NetworkRollback.before_loop.is_connected(_on_before_loop):
+		NetworkRollback.before_loop.disconnect(_on_before_loop)
+		NetworkRollback.on_prepare_tick.disconnect(_on_prepare_tick)
+
+
+func _on_before_loop() -> void:
+	_loop_starting = true
+
+
+## The rope ties both cubes and the world into one simulation, so on the host every
+## resimulation (a late input from the client) replays all of it from the first changed
+## tick. Connected before the synchronizers, so they see the mutation for this tick.
+func _on_prepare_tick(tick: int) -> void:
+	if not _loop_starting:
+		return
+	_loop_starting = false
+	if multiplayer.is_server():
+		for node in [self, player_1, player_2]:
+			NetworkRollback.mutate(node, tick)
+
+
+func _rollback_tick(delta: float, tick: int, is_fresh: bool) -> void:
+	if waiting_for_partner:
+		return
+	if _place_ticks.has(tick):
+		_place_at_checkpoint()
+	var inputs := []
+	for input in _inputs:
+		inputs.append([input.axis, input.jump, input.climb])
+	_simulate(delta, inputs, is_fresh)
+
+
+# --- Simulation ----------------------------------------------------------------------
+
+func _physics_process(delta: float) -> void:
+	if Net.is_online():
+		return
+	_simulate(delta, [_read_input(0), _read_input(1)], true)
+
+
+func _simulate(delta: float, inputs: Array, fresh: bool) -> void:
+	sim_time += delta
+	var falling := ending >= Ending.FALL
+	if stage.fail_floor != null and stage.fail_floor.failed != falling:
+		if falling:
+			stage.fail_floor.fail()
+		else:
+			stage.fail_floor.restore()
+	stage.set_ending(falling)
+	var locked := intro_t >= 0.0 or witness_t >= 0.0 or ending != Ending.NONE
+	_jump_now = inputs[0][1] or inputs[1][1]
+	var cubes := [player_1, player_2]
+	for i in 2:
+		var cube: PlayerCube = cubes[i]
+		cube.input_axis = clampf(inputs[i][0], -1.0, 1.0)
 		cube.input_jump = inputs[i][1]
 		cube.input_climb = inputs[i][2]
 		cube.input_locked = locked
+		cube.fx_enabled = fresh
 	if stage.lift != null:
 		stage.lift.update(delta, cubes)
 	for c in stage.cornices:
@@ -118,41 +251,40 @@ func _physics_process(delta: float) -> void:
 	player_2.step(delta)
 	rope.step(delta, player_1, player_2, true)
 	_progress(delta)
-	if Net.mode == Net.Mode.HOST:
-		_rpc_snapshot.rpc(_snapshot())
 
 
 func _read_input(slot: int) -> Array:
 	if test_mode:
 		return test_inputs[slot]
-	if Net.mode == Net.Mode.LOCAL:
-		if slot == 0:
-			return [
-				float(int(Input.is_physical_key_pressed(KEY_D)) - int(Input.is_physical_key_pressed(KEY_A))),
-				Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_SPACE),
-				Input.is_physical_key_pressed(KEY_C),
-			]
+	if slot == 0:
 		return [
-			float(int(Input.is_physical_key_pressed(KEY_RIGHT)) - int(Input.is_physical_key_pressed(KEY_LEFT))),
-			Input.is_physical_key_pressed(KEY_UP),
-			Input.is_physical_key_pressed(KEY_PERIOD) or Input.is_physical_key_pressed(KEY_KP_0),
+			float(int(Input.is_physical_key_pressed(KEY_D)) - int(Input.is_physical_key_pressed(KEY_A))),
+			Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_SPACE),
+			Input.is_physical_key_pressed(KEY_C),
 		]
 	return [
-		Input.get_axis("move_left", "move_right"),
-		Input.is_action_pressed("jump"),
-		Input.is_action_pressed("climb"),
+		float(int(Input.is_physical_key_pressed(KEY_RIGHT)) - int(Input.is_physical_key_pressed(KEY_LEFT))),
+		Input.is_physical_key_pressed(KEY_UP),
+		Input.is_physical_key_pressed(KEY_PERIOD) or Input.is_physical_key_pressed(KEY_KP_0),
 	]
 
 
 func _progress(delta: float) -> void:
-	if _ending != Ending.NONE:
+	if ending != Ending.NONE:
 		_step_ending(delta)
 		return
-	if _witness_t >= 0.0:
-		_witness_t += delta
-		if _witness_t >= WITNESS_DURATION:
-			_witness_t = -1.0
-			_emit("witness_end")
+	if intro_t >= 0.0:
+		intro_t += delta
+		var skipped := _jump_now and not intro_jump_held and intro_t > INTRO_SKIP_AFTER
+		intro_jump_held = _jump_now
+		if skipped or intro_t >= intro_duration():
+			intro_t = -1.0
+		return
+	if witness_t >= 0.0:
+		witness_t += delta
+		if witness_t >= WITNESS_DURATION:
+			witness_t = -1.0
+			witness_done = true
 		return
 
 	var room: StageGenerator.Room = stage.rooms[checkpoint]
@@ -160,7 +292,7 @@ func _progress(delta: float) -> void:
 	for cube in [player_1, player_2]:
 		var p: Vector2 = cube.global_position
 		if p.y > room.floor_y + 2.0 * C or p.x < -14.0 * C or p.x > 44.0 * C:
-			_emit("reset")
+			_fall()
 			return
 		for zone in room.fall_zones:
 			if zone.has_point(p):
@@ -168,31 +300,30 @@ func _progress(delta: float) -> void:
 				break
 	# One cube dangling in a pit is held by the rope and can climb back; both is a fall.
 	if in_pit == 2:
-		_emit("reset")
+		_fall()
 		return
 	# The camp: once the lift has risen there is no way back up from its floor.
 	if checkpoint == ROOM_WITNESS and stage.lift != null and stage.lift.offset > C \
 			and stage.lift_stuck_zone.has_point(player_1.global_position) \
 			and stage.lift_stuck_zone.has_point(player_2.global_position):
-		_emit("reset")
+		_fall()
 		return
 
 	if checkpoint < ROOM_EDGE and _both_standing_above(stage.floor_y(checkpoint + 1)):
-		_emit("checkpoint", [checkpoint + 1])
+		set_checkpoint(checkpoint + 1)
 		return
 
-	if checkpoint == ROOM_WITNESS and not witness_done and player_1.is_on_floor() and player_2.is_on_floor() \
+	if checkpoint == ROOM_WITNESS and not witness_done and player_1.on_floor and player_2.on_floor \
 			and stage.witness_trigger.has_point(player_1.global_position) \
 			and stage.witness_trigger.has_point(player_2.global_position):
-		_witness_t = 0.0
-		_emit("witness")
+		witness_t = 0.0
 		return
 
 	if checkpoint == ROOM_EDGE:
-		_edge_idle += delta
+		edge_idle += delta
 		var near_border := stage.near_border(player_1.global_position) or stage.near_border(player_2.global_position)
-		if near_border or _edge_idle > ENDING_IDLE_LIMIT:
-			_emit("ending", [Ending.MOON])
+		if near_border or edge_idle > ENDING_IDLE_LIMIT:
+			_set_ending(Ending.MOON)
 
 
 ## The summit: jumping from the glitching bump under the broken corner is the glitch. The
@@ -202,29 +333,28 @@ func _try_seam(cubes: Array, locked: bool) -> bool:
 	if locked or corrupted or checkpoint != ROOM_FOR_SEAM - 1:
 		return false
 	for cube in cubes:
-		if cube.input_jump and cube.is_on_floor() and stage.seam_trigger.has_point(cube.global_position):
+		if cube.input_jump and cube.on_floor and stage.seam_trigger.has_point(cube.global_position):
 			var spawns: Array[Vector2] = stage.rooms[ROOM_FOR_SEAM].spawns
 			player_1.teleport(spawns[0])
 			player_2.teleport(spawns[1])
 			rope.reset(spawns[0], spawns[1])
-			_glitch_burst = 0.6
 			return true
 	return false
 
 
 func _both_standing_above(floor_line: float) -> bool:
 	for cube in [player_1, player_2]:
-		if not cube.is_on_floor() or cube.global_position.y > floor_line - C * 0.25:
+		if not cube.on_floor or cube.global_position.y > floor_line - C * 0.25:
 			return false
 	return true
 
 
 func _step_ending(delta: float) -> void:
-	_ending_t += delta
-	match _ending:
+	ending_t += delta
+	match ending:
 		Ending.MOON:
-			if _ending_t > 2.4:
-				_emit("ending", [Ending.FALL])
+			if ending_t > 2.4:
+				_set_ending(Ending.FALL)
 		Ending.FALL:
 			# Both fall down the mountain they climbed, past the camp ledge where they watched.
 			var targets := [stage.echo_x - C * 0.6, stage.echo_x + C * 0.6]
@@ -234,48 +364,36 @@ func _step_ending(delta: float) -> void:
 				cube.velocity.x = (targets[i] - cube.global_position.x) * 1.6
 			var witness_y := stage.witness_spots[0].y if not stage.witness_spots.is_empty() else stage.floor_y(ROOM_WITNESS)
 			if _midpoint().y > witness_y + 5.0 * C:
-				_emit("ending", [Ending.FADE])
+				_set_ending(Ending.FADE)
 		Ending.FADE:
-			if _ending_t > 5.5:
-				_emit("ending", [Ending.DONE])
+			if ending_t > 5.5:
+				_set_ending(Ending.DONE)
 
 
-# --- Events --------------------------------------------------------------------------
+func _set_ending(phase: int) -> void:
+	ending = phase
+	ending_t = 0.0
+	if phase == Ending.FALL:
+		player_1.set_ending_fall(true)
+		player_2.set_ending_fall(true)
 
-func _emit(event_name: String, args: Array = []) -> void:
-	_apply_event(event_name, args)
-	if Net.mode == Net.Mode.HOST:
-		_rpc_event.rpc(event_name, args)
+
+func _fall() -> void:
+	resets += 1
+	_place_at_checkpoint()
 
 
-func _apply_event(event_name: String, args: Array) -> void:
-	match event_name:
-		"reset":
-			resets += 1
-			_place_at_checkpoint()
-			_flash(0.25)
-		"checkpoint":
-			checkpoint = args[0]
-			_edge_idle = 0.0
-			if checkpoint >= ROOM_FOR_SEAM and not corrupted:
-				_cross_seam()
-		"witness":
-			_start_witness()
-		"witness_end":
-			witness_done = true
-			if _speech != null:
-				_speech.queue_free()
-				_speech = null
-			music.set_state(Music.State.CORRUPT if corrupted else Music.State.PLAY)
-		"ending":
-			_set_ending(args[0])
-		"full_state":
-			var state: Dictionary = args[0]
-			checkpoint = state["checkpoint"]
-			witness_done = state["witness_done"]
-			if state["corrupted"] and not corrupted:
-				_cross_seam()
-			_place_at_checkpoint()
+func intro_duration() -> float:
+	return INTRO_LINE.length() / INTRO_TYPE_RATE + INTRO_HOLD
+
+
+## Moves the climb to a room (the story's checkpoint). Rooms from the seam up are the
+## corrupted half.
+func set_checkpoint(index: int) -> void:
+	checkpoint = index
+	edge_idle = 0.0
+	if checkpoint >= ROOM_FOR_SEAM:
+		corrupted = true
 
 
 func _place_at_checkpoint() -> void:
@@ -289,14 +407,87 @@ func _place_at_checkpoint() -> void:
 		c.set_intact(true)
 
 
-func _cross_seam() -> void:
-	corrupted = true
-	player_1.set_corrupted(true)
-	player_2.set_corrupted(true)
-	rope.corrupted = true
-	stage.set_corrupted_visible(true)
-	_glitch_burst = 0.8
-	music.set_state(Music.State.CORRUPT)
+# --- Story effects -------------------------------------------------------------------
+
+## Plays the effects for whatever the simulation state changed since the last frame.
+func _show_story() -> void:
+	if resets > _resets_shown:
+		_flash(0.25)
+	_resets_shown = resets
+	if corrupted != _corrupted_shown:
+		_corrupted_shown = corrupted
+		_show_corruption(corrupted)
+	var welcoming := intro_t >= 0.0
+	if welcoming != _intro_shown:
+		_intro_shown = welcoming
+		if welcoming:
+			_start_intro()
+		else:
+			_end_intro()
+	if _intro_speech != null and welcoming:
+		var typed := int(intro_t * INTRO_TYPE_RATE)
+		_intro_speech.visible_characters = typed
+		_elder.talking = typed < INTRO_LINE.length()
+	var watching := witness_t >= 0.0
+	if watching != _witness_shown:
+		_witness_shown = watching
+		if watching:
+			_start_witness()
+		else:
+			_end_witness()
+	while _ending_shown < ending:
+		_ending_shown += 1
+		_show_ending(_ending_shown)
+
+
+func _show_corruption(on: bool) -> void:
+	player_1.set_corrupted(on)
+	player_2.set_corrupted(on)
+	rope.corrupted = on
+	stage.set_corrupted_visible(on)
+	if on:
+		_glitch_burst = 0.8
+	music.set_state(Music.State.CORRUPT if on else Music.State.PLAY)
+
+
+func _start_intro() -> void:
+	music.set_state(Music.State.DUCK)
+	# Wrapped at a fixed width; the bubble keeps its full size while the line types out.
+	_intro_speech = _make_bubble(INTRO_LINE, 460.0)
+	_intro_speech.visible_characters = 0
+	_update_hint()
+
+
+func _end_intro() -> void:
+	if _intro_speech != null:
+		var bubble := _intro_speech
+		_intro_speech = null
+		var tween := create_tween()
+		tween.tween_property(bubble, "modulate:a", 0.0, 0.3)
+		tween.tween_callback(bubble.queue_free)
+	_elder.talking = false
+	music.set_state(Music.State.CORRUPT if corrupted else Music.State.PLAY)
+	_update_hint()
+
+
+func _make_bubble(text: String, wrap_width: float = 0.0) -> Label:
+	var label := Label.new()
+	if wrap_width > 0.0:
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.custom_minimum_size.x = wrap_width
+		label.size.x = wrap_width
+	label.text = text
+	label.add_theme_font_size_override("font_size", 18)
+	label.add_theme_color_override("font_color", Color(0.15, 0.08, 0.05))
+	var bubble := StyleBoxFlat.new()
+	bubble.bg_color = Color(1.0, 0.97, 0.88)
+	bubble.border_color = Color(0.15, 0.08, 0.05)
+	bubble.set_border_width_all(3)
+	bubble.set_corner_radius_all(10)
+	bubble.set_content_margin_all(8)
+	label.add_theme_stylebox_override("normal", bubble)
+	effects.add_child(label)
+	return label
 
 
 func _start_witness() -> void:
@@ -305,31 +496,23 @@ func _start_witness() -> void:
 	echo.position = Vector2(stage.echo_x, camera.global_position.y - 460.0)
 	echo.fall_distance = 1400.0
 	effects.add_child(echo)
-	_speech = Label.new()
-	_speech.text = LINE
-	_speech.add_theme_font_size_override("font_size", 18)
-	_speech.add_theme_color_override("font_color", Color(0.15, 0.08, 0.05))
-	var bubble := StyleBoxFlat.new()
-	bubble.bg_color = Color(1.0, 0.97, 0.88)
-	bubble.border_color = Color(0.15, 0.08, 0.05)
-	bubble.set_border_width_all(3)
-	bubble.set_corner_radius_all(10)
-	bubble.set_content_margin_all(8)
-	_speech.add_theme_stylebox_override("normal", bubble)
+	_speech = _make_bubble(LINE)
 	_speech.modulate.a = 0.0
-	effects.add_child(_speech)
 	var tween := create_tween()
 	tween.tween_interval(1.6)
 	tween.tween_property(_speech, "modulate:a", 1.0, 0.3)
 
 
-func _set_ending(phase: int) -> void:
-	_ending = phase as Ending
-	_ending_t = 0.0
-	match _ending:
+func _end_witness() -> void:
+	if _speech != null:
+		_speech.queue_free()
+		_speech = null
+	music.set_state(Music.State.CORRUPT if corrupted else Music.State.PLAY)
+
+
+func _show_ending(phase: int) -> void:
+	match phase:
 		Ending.MOON:
-			player_1.input_locked = true
-			player_2.input_locked = true
 			if stage.moon != null:
 				var tween := create_tween()
 				for i in 8:
@@ -337,17 +520,12 @@ func _set_ending(phase: int) -> void:
 				tween.tween_property(stage.moon, "visible", false, 0.0)
 			_glitch_burst = 0.8
 		Ending.FALL:
-			stage.fail_floor.fail()
-			stage.set_ending(true)
-			player_1.set_ending_fall(true)
-			player_2.set_ending_fall(true)
 			music.set_state(Music.State.CUT)
 			_place_witnesses()
 		Ending.FADE:
 			create_tween().tween_property(fade, "color:a", 1.0, 2.5)
 		Ending.DONE:
-			if Net.is_authority():
-				Net.leave_to_menu()
+			Net.leave_to_menu()
 
 
 func _place_witnesses() -> void:
@@ -374,16 +552,19 @@ func _flash(duration: float) -> void:
 # --- Presentation --------------------------------------------------------------------
 
 func _process(delta: float) -> void:
+	_show_story()
 	var mid := _midpoint()
 	var target := mid
-	if _ending == Ending.NONE:
+	if ending == Ending.NONE:
 		var idx := stage.room_index_at(mid.y)
 		var cap := checkpoint + 1 if corrupted or checkpoint + 1 < ROOM_FOR_SEAM else ROOM_FOR_SEAM - 1
 		target = stage.room_center(clampi(idx, 0, mini(cap, Tuning.ROOM_COUNT - 1)))
-	camera.global_position = camera.global_position.lerp(target, 1.0 - exp(-delta * (6.0 if _ending == Ending.NONE else 10.0)))
+	camera.global_position = camera.global_position.lerp(target, 1.0 - exp(-delta * (6.0 if ending == Ending.NONE else 10.0)))
 
 	if _speech != null:
 		_speech.position = mid + Vector2(-_speech.size.x * 0.5, -C * 2.6)
+	if _intro_speech != null:
+		_intro_speech.position = _elder.position + Vector2(-_intro_speech.size.x * 0.5, -_intro_speech.size.y - C * 1.6)
 
 	_corruption_visual = move_toward(_corruption_visual, 1.0 if corrupted else 0.0, delta * 0.6)
 	_update_sky(delta)
@@ -441,6 +622,9 @@ func _update_room_label(delta: float) -> void:
 
 
 func _update_hint() -> void:
+	if intro_t >= 0.0:
+		hint.text = "Press jump to continue"
+		return
 	if checkpoint > 1:
 		hint.text = ""
 		return
@@ -460,59 +644,31 @@ func _update_status() -> void:
 
 # --- Network -------------------------------------------------------------------------
 
-func _snapshot() -> Array:
-	return [
-		sim_time,
-		player_1.global_position, player_1.velocity, player_1.net_flags(),
-		player_2.global_position, player_2.velocity, player_2.net_flags(),
-		stage.lift.offset if stage.lift != null else 0.0,
-		stage.cornice_bits(),
-	]
-
-
 func _on_partner_left() -> void:
 	waiting_for_partner = true
 	_update_status()
-
-
-@rpc("any_peer", "call_remote", "unreliable_ordered")
-func _rpc_input(axis: float, jump: bool, climb: bool) -> void:
-	if Net.mode == Net.Mode.HOST:
-		_remote_input = [clampf(axis, -1.0, 1.0), jump, climb]
 
 
 @rpc("any_peer", "call_remote", "reliable")
 func _rpc_client_ready() -> void:
 	if Net.mode != Net.Mode.HOST:
 		return
+	# The partner's cube follows the new peer's input from now on.
 	var peer := multiplayer.get_remote_sender_id()
-	# A partner (re)joining starts from the shared room floor, as the GDD asks.
-	_place_at_checkpoint()
-	_rpc_event.rpc_id(peer, "full_state", [{
-		"checkpoint": checkpoint,
-		"corrupted": corrupted,
-		"witness_done": witness_done,
-	}])
-	_remote_input = [0.0, false, false]
+	_inputs[1].set_multiplayer_authority(peer)
+	_synchronizers[1].process_authority()
+	for sync in _synchronizers:
+		sync.visibility_filter.set_visibility_for(peer, true)
+		sync.visibility_filter.update_visibility()
+	# A partner (re)joining starts from the shared room floor, as the GDD asks. netfox
+	# sends the client the rest of the state.
+	_place_ticks[NetworkTime.tick] = true
 	waiting_for_partner = false
 	_update_status()
+	_rpc_start_clock.rpc_id(peer)
 
 
-@rpc("authority", "call_remote", "unreliable_ordered")
-func _rpc_snapshot(data: Array) -> void:
-	sim_time = data[0]
-	player_1.apply_snapshot(data[1], data[2], data[3])
-	player_2.apply_snapshot(data[4], data[5], data[6])
-	if stage.lift != null:
-		stage.lift.apply_offset(data[7])
-	stage.apply_cornice_bits(data[8])
-	stage.apply_time(sim_time)
-	player_1.ending_fall = _ending >= Ending.FALL
-	player_2.ending_fall = _ending >= Ending.FALL
-
-
+## Host to client: both games are loaded, so the client can sync its clock now.
 @rpc("authority", "call_remote", "reliable")
-func _rpc_event(event_name: String, args: Array) -> void:
-	_apply_event(event_name, args)
-	if event_name == "ending" and args[0] == Ending.DONE:
-		Net.leave_to_menu()
+func _rpc_start_clock() -> void:
+	Net.start_clock()

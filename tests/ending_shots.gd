@@ -5,8 +5,8 @@ func _initialize() -> void:
 	main_scene = load("res://scenes/main.tscn")
 	var out: String = OS.get_cmdline_user_args()[0]
 	await fresh(EDGE - 1, 3)
-	main._apply_event("checkpoint", [SEAM])
-	main._apply_event("checkpoint", [EDGE])
+	main.set_checkpoint(SEAM)
+	main.set_checkpoint(EDGE)
 	main._place_at_checkpoint()
 	main.camera.global_position = stage.room_center(EDGE)
 	await frames(80)

@@ -10,7 +10,7 @@ func _initialize() -> void:
 	for room in Tuning.ROOM_COUNT:
 		await fresh(room, 3)
 		if room >= SEAM:
-			main._apply_event("checkpoint", [SEAM])
+			main.set_checkpoint(SEAM)
 		main.checkpoint = room
 		var r: StageGenerator.Room = stage.rooms[room]
 		place(r.spawns[0], r.spawns[1])

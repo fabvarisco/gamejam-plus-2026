@@ -33,7 +33,7 @@ func fail() -> void:
 		return
 	failed = true
 	for cs in _shapes:
-		cs.set_deferred("disabled", true)
+		cs.disabled = true
 	_pieces.clear()
 	for r in rects + bridges:
 		var x := r.position.x
@@ -50,7 +50,7 @@ func restore() -> void:
 	failed = false
 	_pieces.clear()
 	for cs in _shapes:
-		cs.set_deferred("disabled", false)
+		cs.disabled = false
 	queue_redraw()
 
 

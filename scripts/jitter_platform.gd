@@ -38,7 +38,7 @@ func apply_time(t: float) -> void:
 	_warning = now_solid and local > PERIOD - WARN_TIME
 	if now_solid != solid:
 		solid = now_solid
-		_shape.set_deferred("disabled", not solid)
+		_shape.disabled = not solid
 
 
 func _process(_delta: float) -> void:

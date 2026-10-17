@@ -69,7 +69,7 @@ Rooms 1 through 6 teach the rope while the world still holds, then ask more of i
 
 | Room | Verb | Gameplay | What the players see |
 | --- | --- | --- | --- |
-| 1. Village | Walk together | Flat ground. The rope stretches and pulls back. Both learn how far three cubes reach. | Vector village, sun, small cubes in the background, a hand-drawn moon poster. Each player cube has its own solid color. |
+| 1. Village | Walk together | The elder's welcome, then flat ground. The rope stretches and pulls back. Both learn how far three cubes reach. | Vector village, sun, small cubes in the background, a hand-drawn moon poster. Each player cube has its own solid color. |
 | 2. Forest | Anchor, twice | Two lips in a row that a solo jump cannot reach. One stays below as a step, the other climbs and hauls the partner up, then again on a shelf just wide enough to haul. | Pines and mossy rock, birds. The moon poster points upward. |
 | 3. Gorge | Swing | One holds the edge. The other gains momentum and grabs the far side, two cubes lower. Then the anchor walks off and is held and hauled up. Both in the river is a fall. | A waterfall over the river. The rocks are still natural. The moon is still the goal. |
 | 4. Cave | Anchor + swing | The first mix: a lip, then a swing across a dark pit. | Inside the mountain: no sky, glowing crystals, stalactites. |
@@ -116,7 +116,13 @@ Input does not invert, delay, or drop. The glitch is in the world, not in the ha
 
 The cube community dreams of reaching the moon and sends two of its own on the journey. That exists in room 1, as an audience and as a poster.
 
-The only spoken line in the climb is the one in room 5. Nobody explains the simulation in dialogue. The players learn it by hitting the wall, glitching past it, and falling.
+The game opens with an introduction in the village. An old cube, gray with a beard and a cane, welcomes the two players before they can move:
+
+> Bem-vindos à Torre dos Paralelepípeda, vocês foram os cubos escolhidos para subir essa torre e nos salvar da maldição que transforma os cubos em paralelepípedos.
+
+("Welcome to the Tower of the Parallelepipeds. You are the cubes chosen to climb this tower and save us from the curse that turns cubes into parallelepipeds.") The line types out in a speech bubble, then the climb starts. Either player can skip it with a jump. Online, both players see it together.
+
+Apart from that welcome, the only spoken line in the climb is the one in room 5. Nobody explains the simulation in dialogue. The players learn it by hitting the wall, glitching past it, and falling.
 
 Scenery arc:
 

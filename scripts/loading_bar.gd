@@ -51,7 +51,7 @@ func apply_time(t: float) -> void:
 		var now := _local >= order * FILL_STEP and _local < FULL_END
 		if now != solid[i]:
 			solid[i] = now
-			_shapes[i].set_deferred("disabled", not now)
+			_shapes[i].disabled = not now
 	queue_redraw()
 
 

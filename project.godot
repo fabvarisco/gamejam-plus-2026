@@ -11,12 +11,17 @@ config_version=5
 [application]
 
 config/name="gamejam-plus-2026"
+run/main_scene="res://scenes/menu.tscn"
 config/features=PackedStringArray("4.5", "GL Compatibility")
 config/icon="res://icon.svg"
-run/main_scene="res://scenes/menu.tscn"
 
 [autoload]
 
+NetworkTime="*res://addons/netfox/network-time.gd"
+NetworkTimeSynchronizer="*res://addons/netfox/network-time-synchronizer.gd"
+NetworkRollback="*res://addons/netfox/rollback/network-rollback.gd"
+NetworkEvents="*res://addons/netfox/network-events.gd"
+NetworkPerformance="*res://addons/netfox/network-performance.gd"
 Net="*res://scripts/net.gd"
 
 [display]
@@ -24,6 +29,10 @@ Net="*res://scripts/net.gd"
 window/size/viewport_width=1280
 window/size/viewport_height=720
 window/stretch/mode="canvas_items"
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/netfox.internals/plugin.cfg", "res://addons/netfox/plugin.cfg")
 
 [input]
 
@@ -56,6 +65,14 @@ climb={
 
 2d_physics/layer_1="terrain"
 2d_physics/layer_2="players"
+
+[netfox]
+
+general/clear_settings=false
+time/sync_to_physics=true
+time/suppress_offline_peer_warning=true
+rollback/history_limit=90
+events/enabled=false
 
 [physics]
 

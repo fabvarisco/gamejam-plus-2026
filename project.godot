@@ -13,6 +13,22 @@ config_version=5
 config/name="gamejam-plus-2026"
 config/features=PackedStringArray("4.5", "GL Compatibility")
 config/icon="res://icon.svg"
+run/main_scene="res://scenes/main.tscn"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+
+[layer_names]
+
+2d_physics/layer_1="terrain"
+2d_physics/layer_2="players"
+
+[physics]
+
+2d/default_gravity=980.0
 
 [rendering]
 

@@ -1,0 +1,143 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://scripts/menu.gd" id="1_menu"]
+[ext_resource type="Shader" path="res://scripts/sky.gdshader" id="2_sky"]
+[ext_resource type="Texture2D" path="res://Assets/cubo_parado_dir.svg" id="3_cube"]
+[ext_resource type="Shader" path="res://scripts/cube_recolor.gdshader" id="4_recolor"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_sky"]
+shader = ExtResource("2_sky")
+shader_parameter/corruption = 0.0
+shader_parameter/height = 0.15
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_p1"]
+shader = ExtResource("4_recolor")
+shader_parameter/tint = Color(1, 0.56, 0.28, 1)
+shader_parameter/glitch_tint = Color(1, 1, 1, 1)
+shader_parameter/glitch = 0.0
+shader_parameter/slice_seed = 0.0
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_p2"]
+shader = ExtResource("4_recolor")
+shader_parameter/tint = Color(0.3, 0.82, 0.86, 1)
+shader_parameter/glitch_tint = Color(1, 1, 1, 1)
+shader_parameter/glitch = 0.0
+shader_parameter/slice_seed = 0.0
+
+[node name="Menu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_menu")
+
+[node name="Sky" type="ColorRect" parent="."]
+material = SubResource("ShaderMaterial_sky")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Center" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Box" type="VBoxContainer" parent="Center"]
+custom_minimum_size = Vector2(420, 0)
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="Cubes" type="HBoxContainer" parent="Center/Box"]
+layout_mode = 2
+alignment = 1
+
+[node name="CubeA" type="TextureRect" parent="Center/Box/Cubes"]
+material = SubResource("ShaderMaterial_p1")
+custom_minimum_size = Vector2(72, 72)
+layout_mode = 2
+texture = ExtResource("3_cube")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="CubeB" type="TextureRect" parent="Center/Box/Cubes"]
+material = SubResource("ShaderMaterial_p2")
+custom_minimum_size = Vector2(72, 72)
+layout_mode = 2
+texture = ExtResource("3_cube")
+expand_mode = 1
+stretch_mode = 5
+flip_h = true
+
+[node name="Title" type="Label" parent="Center/Box"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.97, 0.9, 1)
+theme_override_colors/font_outline_color = Color(0.16, 0.08, 0.05, 1)
+theme_override_constants/outline_size = 10
+theme_override_font_sizes/font_size = 44
+text = "Cubes on the Mountain"
+horizontal_alignment = 1
+
+[node name="Subtitle" type="Label" parent="Center/Box"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.25, 0.12, 0.07, 1)
+theme_override_font_sizes/font_size = 16
+text = "Two cubes, one rope. Climb to the moon together."
+horizontal_alignment = 1
+
+[node name="CreateButton" type="Button" parent="Center/Box"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "Create room"
+
+[node name="CodeLabel" type="Label" parent="Center/Box"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.97, 0.9, 1)
+theme_override_colors/font_outline_color = Color(0.16, 0.08, 0.05, 1)
+theme_override_constants/outline_size = 6
+theme_override_font_sizes/font_size = 26
+horizontal_alignment = 1
+
+[node name="JoinRow" type="HBoxContainer" parent="Center/Box"]
+layout_mode = 2
+
+[node name="CodeInput" type="LineEdit" parent="Center/Box/JoinRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 20
+placeholder_text = "Room code"
+alignment = 1
+
+[node name="JoinButton" type="Button" parent="Center/Box/JoinRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(120, 44)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "Join"
+
+[node name="LocalButton" type="Button" parent="Center/Box"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+text = "Local test (one keyboard, debug only)"
+
+[node name="Message" type="Label" parent="Center/Box"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.25, 0.12, 0.07, 1)
+theme_override_font_sizes/font_size = 16
+horizontal_alignment = 1
+autowrap_mode = 3

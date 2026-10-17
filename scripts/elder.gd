@@ -3,7 +3,8 @@ extends Node2D
 
 ## The village elder who welcomes the two cubes before the climb: the same cube sprite,
 ## grayed with age, with a beard, bushy eyebrows and a cane. Placed with its feet on the
-## ground at the node's position. It bobs while it talks.
+## ground at the node's position. It bobs while it talks. When the curse breaks it
+## becomes what it feared: `cursed` stretches and slants it into a parallelepiped.
 
 const TINT := Color(0.72, 0.7, 0.78)
 const WHITE := Color(0.97, 0.96, 0.92)
@@ -14,6 +15,8 @@ const FEET := 17.6
 
 var facing_left: bool = true
 var talking: bool = false
+## 0 is a cube, 1 a parallelepiped (wider, flatter and slanted).
+var cursed: float = 0.0
 
 var _sprite: Sprite2D
 var _details: Node2D
@@ -38,8 +41,13 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	_t += delta
 	var bob := absf(sin(_t * 9.0)) * 2.5 if talking else sin(_t * 1.5) * 0.6
-	_sprite.position = Vector2(0.0, -FEET - bob)
+	var squash := 1.0 - 0.45 * cursed
+	_sprite.scale = Vector2(SCALE * (1.0 + 1.3 * cursed), SCALE * squash)
+	_sprite.skew = -0.45 * cursed
+	_sprite.position = Vector2(0.0, -FEET * squash - bob * (1.0 - cursed))
+	# The beard and cane go with the cube it was.
 	_details.position = _sprite.position
+	_details.modulate.a = 1.0 - cursed
 	_details.queue_redraw()
 
 

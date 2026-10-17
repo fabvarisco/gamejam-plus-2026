@@ -122,7 +122,7 @@ The game opens with an introduction in the village. An old cube, gray with a bea
 
 ("Welcome to the Tower of the Parallelepipeds. You are the cubes chosen to climb this tower and save us from the curse that turns cubes into parallelepipeds.") The line types out in a speech bubble, then the climb starts. Either player can skip it with a jump. Online, both players see it together.
 
-Apart from that welcome, the only spoken line in the climb is the one in room 5. Nobody explains the simulation in dialogue. The players learn it by hitting the wall, glitching past it, and falling.
+Apart from the elder's greetings (see "The loop" under Ending), the only spoken line in the climb is the one in room 5. Nobody explains the simulation in dialogue. The players learn it by hitting the wall, glitching past it, and falling.
 
 Scenery arc:
 
@@ -139,6 +139,17 @@ Around it, the scenery is broken. There is a grid, a window with no outside, a c
 There is no higher hold. The floor under them fails. Both cubes fall down the mountain they climbed. The camera shows the ledge from room 5 go by, with two small cubes standing on it, watching. The falling bodies are the ones who said they were glad it was not them.
 
 The level does not announce victory or explain an escape. There is no moon. There is no way out. The climb ends by becoming the fall it already showed.
+
+### The loop
+
+The fall is not the end of the game. When the screen fades, the game starts over in the village with both cubes at the start, and the elder greets them again. The game counts the climbs, and the greeting changes:
+
+- **First climb:** the welcome.
+- **Second climb:** "Você ainda está tentando subir essa torre?" ("Are you still trying to climb this tower?")
+- **Third climb:** "Mas você não desiste mesmo hein!" ("You really don't give up, huh!")
+- **Fourth climb:** there is no fourth climb. Their persistence has broken the curse, and the elder is the one it was protecting. It says "Você quebrou a maldição, nãooooooo!!!" ("You broke the curse, nooooo!!!"), turns into a parallelepiped, fades away, and the game shows GAME OVER. This greeting can't be skipped.
+
+Each climb plays the camp scene again, so the players watch their own fall once more before they make it.
 
 ## Online co-op
 

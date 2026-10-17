@@ -48,7 +48,7 @@ func _initialize() -> void:
 		if arg.begins_with("seed="):
 			default_seed = int(arg.trim_prefix("seed="))
 	var tests := [
-		"test_intro", "test_settle", "test_hang_holds", "test_solo_step", "test_solo_lip_fails", "test_stack_climbs_lip",
+		"test_intro", "test_intro_lines", "test_final_run", "test_settle", "test_hang_holds", "test_solo_step", "test_solo_lip_fails", "test_stack_climbs_lip",
 		"test_haul_up_lip", "test_climb_recovery", "test_solo_gap_fails", "test_swing_crosses_gap",
 		"test_anchor_follows", "test_water_resets", "test_lift", "test_witness", "test_cornice_breaks_under_two",
 		"test_cornice_one_at_a_time", "test_loading_bar_crossing", "test_loading_bar_empties", "test_wall_unreachable",
@@ -250,6 +250,41 @@ func test_intro() -> bool:
 			and check(skipped, "a jump did not skip the welcome (intro_t %.2f)" % main.intro_t) \
 			and check(moves, "the cubes could not move after the welcome") \
 			and check(main.intro_t < 0.0, "the welcome did not end by itself")
+
+
+func test_intro_lines() -> bool:
+	# Each new climb opens with a different line; the fourth is the curse breaking.
+	await fresh(VILLAGE)
+	var lines := []
+	for r in 4:
+		main.runs = r
+		lines.append(main.intro_line())
+	return check(lines[0].begins_with("Bem-vindos"), "first climb: %s" % lines[0]) \
+			and check(lines[1] == "Você ainda está tentando subir essa torre?", "second climb: %s" % lines[1]) \
+			and check(lines[2] == "Mas você não desiste mesmo hein!", "third climb: %s" % lines[2]) \
+			and check(lines[3] == "Você quebrou a maldição, nãooooooo!!!", "fourth climb: %s" % lines[3])
+
+
+func test_final_run() -> bool:
+	# After the third fall: the elder's last line can't be skipped, nobody moves, the elder
+	# turns into a parallelepiped and fades, and the game is over.
+	await fresh(VILLAGE)
+	main.runs = 3
+	main.intro_t = 0.0
+	var start := a.global_position
+	var skipped := false
+	for i in int(60 * (main.intro_duration() + 0.5)):
+		inp(0, 1.0, i % 40 > 20)
+		inp(1, -1.0, i % 40 > 20)
+		await physics_frame
+		if main.intro_t < 0.0:
+			skipped = true
+	await process_frame
+	return check(not skipped, "the final script ended or was skipped") \
+			and check(absf(a.global_position.x - start.x) < 1.0, "a cube moved during the final script") \
+			and check(main._elder.cursed >= 1.0 and main._elder.modulate.a <= 0.01, "the elder did not turn and fade (cursed %.2f, alpha %.2f)" % [main._elder.cursed, main._elder.modulate.a]) \
+			and check(main._game_over != null, "no game over message") \
+			and check(main.finished, "the game did not finish")
 
 
 func test_settle() -> bool:
@@ -602,8 +637,19 @@ func test_ending() -> bool:
 		inp(1, -fwd(EDGE))
 		await physics_frame
 		t += 1
-	return check(main.ending >= 3, "ending did not reach the fade (phase %d)" % main.ending) \
-			and check(stage.fail_floor.failed, "floor did not fail")
+	var faded: bool = main.ending >= 3 and stage.fail_floor.failed
+	# After the fade the game starts over in the village, with the elder's welcome.
+	for i in 60 * 8:
+		if main.runs > 0:
+			break
+		await physics_frame
+	await frames(5)
+	return check(faded, "ending did not reach the fade with the floor failed (phase %d)" % main.ending) \
+			and check(main.runs == 1, "the game did not start over after the fall (runs %d)" % main.runs) \
+			and check(main.checkpoint == VILLAGE and not main.corrupted and main.ending == 0, "the restart did not reset the climb") \
+			and check(main.intro_t >= 0.0, "the restart did not replay the welcome") \
+			and check(not stage.fail_floor.failed and not a.ending_fall, "the edge's fall was not undone") \
+			and check(height(VILLAGE, a) < 1.0 and a.is_on_floor(), "the cubes are not back in the village (%s)" % _fmt(a))
 
 
 func test_seeds_spawn_clear() -> bool:

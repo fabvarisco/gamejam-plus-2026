@@ -4,9 +4,11 @@ Design document for the Game Jam Plus 2026 game. Working title. A short online c
 
 ## Pitch
 
-Two cubes tied by a fixed-length rope climb a mountain. Alone, neither can reach the next hold. Together, one anchors and the other climbs. The apparent goal is the moon. Halfway up, the mountain ends. A glitch is the only way to keep climbing. Past that point the world corrupts, and the climb has no exit.
+Two cubes tied by an elastic rope climb a mountain. Alone, neither can reach the next hold. Together, one anchors and the other climbs. The apparent goal is the moon. Halfway up, the mountain ends. A glitch is the only way to keep climbing. Past that point the world corrupts, and the climb has no exit.
 
 On the surface, they belong to a community of happy little cubes who decided to climb to the sky. Underneath, the mountain is a program. The moon is a drawing inside the simulation. The cubes they watch fall are themselves, later.
+
+The game is a cooperative climbing puzzle with a World of Goo-style aesthetic. Procedural stage generation will need to support this layout.
 
 ## Fantasy
 
@@ -24,7 +26,7 @@ The player feels the weight of the other. Pull too early and the partner falls. 
 
 One continuous mountain, read from bottom to top, in eight rooms. Each room fits on one screen. A fall sends both cubes back to the floor of the current room. The session is a short climb, not a campaign.
 
-The unit of measure is the cube. Fully stretched, the rope reaches three cubes. A two-cube gap requires the rope. A four-cube gap is impossible without a hold in between. Platforms follow these multiples so the puzzle can be read before the jump.
+The unit of measure is the cube. At rest, the rope is three cubes long. It stretches under load, but the pull back grows the farther it stretches, so in play it carries a cube only a little past three cubes. A two-cube gap requires the rope. A four-cube gap is impossible without a hold in between. Platforms follow these multiples so the puzzle can be read before the jump.
 
 The mountain has two halves. Rooms 1 through 4 are a real climb: warm, readable, stable. Room 5 is a wall the rope cannot solve. Room 6 is the glitch that opens the way. Rooms 7 and 8 are the corrupted climb, and they end in the fall the players already watched.
 
@@ -40,16 +42,19 @@ Controls:
 
 - Move: arrow keys or A and D.
 - Jump: Space, W, or the up arrow. Releasing the jump in the air shortens the rise.
+- Climb: hold C to climb along the rope toward the partner. Climbing is for recovery only, so a cube left hanging is never stuck. No puzzle requires it.
 
 Moving and jumping stay simple. The complexity lives in the rope.
 
 ## The rope
 
-- Fixed length of three cubes. Nobody reels it in or lets it out.
+- Rest length of three cubes. Nobody reels it in or lets it out.
 - Connects the center of one cube to the center of the other.
-- Visible at all times, as a vector line.
-- Does not pass through walls. It catches on corners, and that slack is part of the puzzle.
-- At full stretch, it stops the cubes from moving farther apart.
+- Visible at all times, as a curved line that sags under gravity when slack and straightens under tension. It does not need to be a full rope simulation, but its shape must look physically believable.
+- Does not pass through walls. It catches on corners, and that slack is part of the puzzles.
+- Has friction against terrain only. Where it wraps a corner or lies on the ground, it drags instead of sliding freely. The rope does not collide with the cubes.
+- Is elastic, with no hard maximum length. Past three cubes it pulls the cubes back toward each other, harder the more it stretches. Players can tug each other with it. The stiffness is tuned so the stretch never covers a four-cube gap.
+- Can be climbed. Holding C moves a cube along the rope toward the partner, so a cube left hanging can always get back. Climbing does not change the rope's length.
 - A cube standing on a hold becomes an anchor. The other uses the length to swing, jump farther, or be pulled up.
 - Both in the air, with no hold, fall together.
 - The rope cannot cross the wall in room 5. The glitch in room 6 is a broken seam in that wall, not a longer rope.
@@ -64,7 +69,7 @@ Rooms 1 through 4 teach the rope while the world still holds. Room 4 also plays 
 
 | Room | Verb | Gameplay | What the players see |
 | --- | --- | --- | --- |
-| 1. Village | Walk together | Flat ground. The rope stretches and locks. Both learn the three-cube limit. | Vector village, sun, small cubes in the background, a hand-drawn moon poster. Each player cube has its own solid color. |
+| 1. Village | Walk together | Flat ground. The rope stretches and pulls back. Both learn how far three cubes reach. | Vector village, sun, small cubes in the background, a hand-drawn moon poster. Each player cube has its own solid color. |
 | 2. Ledge | Anchor | One stays on the ground. The other climbs a lip a solo jump cannot reach. | Still the village. The moon poster points upward. |
 | 3. Gap | Swing | One holds the edge. The other gains momentum and grabs the far side. | The slope begins. The rocks are still natural. The moon is still the goal. |
 | 4. Witness | Weight, then the fall | The platform rises if both leave it. One stays on it while the other crosses. On the far side, the climb pauses. | Other cubes tumble down the face. The players say: "Nossa, ainda bem que não é a gente." ("Good thing that's not us.") |
@@ -89,7 +94,7 @@ Those cubes are the players, later. The line is the whole plot twist, spoken too
 
 The simulation is not a slow stain on the village. It is a place the rope cannot enter.
 
-Room 5 is a fair stop. The gap is bigger than three cubes. Players who try the verbs they know will fail, and the checkpoint puts them back on the last floor. The wall is the end of the mountain they were promised.
+Room 5 is a fair stop. The gap is wider than the rope can stretch. Players who try the verbs they know will fail, and the checkpoint puts them back on the last floor. The wall is the end of the mountain they were promised.
 
 Room 6 is the way through. The seam is wrong on purpose: overlapping collision, a corner the rope can clip, a platform that draws in the wrong place. Climbing it is the glitch. Both cubes have to commit. When they cross, the game changes.
 
@@ -146,14 +151,14 @@ Sound follows the two halves. Below the wall, adventure music. The fall in room 
 
 ## Out of scope
 
-- A rope that reels in or changes length, including a longer rope that bypasses the wall.
+- A rope that reels in or changes its rest length, including a longer rope or extra stretch that bypasses the wall.
 - A cube with different weight, jump, or ability.
 - Corrupted control, delayed input, or inverted input.
 - Corruption that starts in the village. The break begins at the seam.
 - More regions, a campaign, or a solo mode.
 - More than two players.
 - Combat, inventory, and customization.
-- A puzzle that needs a tool beyond walking, jumping, the fixed rope, and the one seam.
+- A puzzle that needs a tool beyond walking, jumping, the rope, and the one seam. Climbing the rope is a recovery tool, never a puzzle solution.
 - An ending in which the cubes escape, reach the moon, or shut down the simulation.
 - A narration that identifies the falling cubes before room 8.
 
